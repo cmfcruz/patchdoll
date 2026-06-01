@@ -1,5 +1,6 @@
 import { mkdir, appendFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { stringifyLogJson } from "./log.js";
 import { openPatchdollSettingsStore, validateSetting } from "./settings.js";
 import type {
   ActionExecutionResult,
@@ -14,7 +15,7 @@ export function createDefaultActionHandlers(): ExternalActionHandler[] {
       type: "chat.reply",
       async execute(action) {
         const body = action.body ?? "";
-        console.log(JSON.stringify({ action: "chat.reply", body }));
+        console.log(stringifyLogJson({ action: "chat.reply", body }));
         return ok(action, "Chat reply emitted to stdout");
       }
     },

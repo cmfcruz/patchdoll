@@ -19,6 +19,7 @@ import type {
   ProgressSink,
   TaskContext
 } from "@patchdoll/core";
+import { stringifyLogJson } from "@patchdoll/core";
 import {
   CODEX_REASONING_EFFORTS,
   DEFAULT_SETTINGS,
@@ -54,8 +55,8 @@ const DEFAULT_LOG_LEVEL: LogLevel = "info";
 const MAX_LOG_VALUE_LENGTH = 4000;
 const PATCHDOLL_LOG_LEVEL = parseLogLevel(process.env.PATCHDOLL_LOG_LEVEL);
 const STATUS_CHECKING = "Checking that now.";
-const STATUS_EDITING = "I’m cleaning that up.";
-const STATUS_STARTED = "I’m on it.";
+const STATUS_EDITING = "I'm cleaning that up.";
+const STATUS_STARTED = "I'm on it.";
 const STATUS_STEP_DONE = "Done with that step.";
 
 interface CodexInvocation {
@@ -342,7 +343,7 @@ function writePatchdollLog(
     }
   }
 
-  const serialized = JSON.stringify(entry);
+  const serialized = stringifyLogJson(entry);
   if (level === "warn") {
     console.warn(serialized);
   } else {
@@ -939,7 +940,7 @@ function parseLogLevel(value: string | undefined): LogLevel {
     return normalized as LogLevel;
   }
 
-  console.warn(JSON.stringify({
+  console.warn(stringifyLogJson({
     level: "warn",
     source: "patchdoll.provider-codex",
     message: "Invalid PATCHDOLL_LOG_LEVEL; using info.",

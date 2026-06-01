@@ -11,6 +11,7 @@ import type {
   ProgressEvent,
   TaskContext
 } from "@patchdoll/core";
+import { stringifyLogJson } from "@patchdoll/core";
 
 const socketPath = CODEX_SOCKET_PATH;
 const allowedUid = uidForUser("patchdoll");
@@ -52,7 +53,7 @@ const server = createServer((socket) => {
 server.listen(socketPath, async () => {
   await chmod(socketPath, 0o660);
   console.log(
-    JSON.stringify({
+    stringifyLogJson({
       message: "codex worker listening",
       socketPath,
       allowedUid,
@@ -218,7 +219,7 @@ function shutdown(signal: NodeJS.Signals): void {
   shuttingDown = true;
 
   console.log(
-    JSON.stringify({
+    stringifyLogJson({
       message: "codex worker shutting down",
       signal
     })

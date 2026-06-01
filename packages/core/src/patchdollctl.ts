@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { escapeLogText, stringifyLogJson } from "./log.js";
 import { openPatchdollSettingsStore } from "./settings.js";
 import type { JsonValue } from "./types.js";
 
@@ -12,14 +13,14 @@ async function main(argv: string[]): Promise<void> {
   const store = await openPatchdollSettingsStore();
   try {
     if (command === "list") {
-      console.log(JSON.stringify(store.list(), null, 2));
+      console.log(stringifyLogJson(store.list(), 2));
       return;
     }
     if (command === "get") {
       const key = required(args[0], "setting key");
       const value = store.get(key);
       if (value === undefined) throw new Error(`Setting not found: ${key}`);
-      console.log(JSON.stringify(value));
+      console.log(stringifyLogJson(value));
       return;
     }
     if (command === "set") {
@@ -54,6 +55,8 @@ function usage(): void {
 }
 
 main(process.argv.slice(2)).catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
+  console.error(
+    escapeLogText(error instanceof Error ? error.message : String(error))
+  );
   process.exitCode = 1;
 });
