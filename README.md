@@ -134,6 +134,7 @@ That is the quick path. Sweet little win.
 ## Slack How-To
 
 The Slack app setup guide now lives in [Slack How-To](docs/slack-how-to.md).
+GitHub webhook setup lives in [GitHub Webhook Ingress](docs/github-webhook.md).
 
 ## How Patchdoll Uses Your Folders
 
@@ -217,6 +218,8 @@ Secrets file values:
 | `PATCHDOLL_GITHUB_APP_ID` | no | GitHub App ID for temporary Codex `gh` access. |
 | `PATCHDOLL_GITHUB_APP_INSTALLATION_ID` | no | GitHub App installation ID. |
 | `PATCHDOLL_GITHUB_APP_PRIVATE_KEY_BASE64` | no | Base64-encoded GitHub App PEM private key. |
+| `PATCHDOLL_GITHUB_WEBHOOK_SECRET` | no | Secret used to verify GitHub `X-Hub-Signature-256` webhook requests. |
+| `PATCHDOLL_NGROK_AUTHTOKEN` | no | ngrok auth token for optional public webhook exposure. |
 
 If one GitHub App value is set, all three GitHub App values must be set. When
 configured, Patchdoll mints a short-lived installation token for each Codex task
@@ -240,6 +243,9 @@ Container environment values:
 | `PATCHDOLL_SLACK_THREAD_MAX_MESSAGE_CHARS` | `4000` | Maximum characters kept per Slack thread message. |
 | `PATCHDOLL_ADMINS` | unset | Comma- or newline-separated Slack user IDs allowed to change settings. |
 | `PATCHDOLL_LOG_LEVEL` | `info` | Container console log level: `warn`, `info`, `debug`, or `trace`. |
+| `PATCHDOLL_GITHUB_NOTIFY_SLACK_CHANNEL` | unset | Slack channel ID that receives GitHub webhook notifications. |
+| `PATCHDOLL_GITHUB_WEBHOOK_TRACKED_REPOS` | unset | Comma- or newline-separated GitHub repositories tracked through webhooks. |
+| `PATCHDOLL_NGROK_DOMAIN` | unset | Stable ngrok domain to use for the public webhook URL. |
 
 Internal runtime values such as `CODEX_HOME`, `HOME`, `PATCHDOLL_TASK`,
 `GH_TOKEN`, `GITHUB_TOKEN`, and `GH_PROMPT_DISABLED` are set by Patchdoll for the

@@ -6,6 +6,7 @@ import { createDefaultActionHandlers } from "./actions.js";
 import { createAiProvider } from "./ai.js";
 import { readBody, sendJson, startNdjson, wantsNdjson, writeNdjson } from "./http.js";
 import { loadConfig } from "./config.js";
+import { handleGithubWebhook } from "./githubWebhook.js";
 import { stringifyLogJson } from "./log.js";
 import { PatchdollRunner } from "./runner.js";
 import type { JsonValue, NormalizedEvent } from "./types.js";
@@ -18,8 +19,20 @@ const ai = await createAiProvider(config);
 const actionHandlers = createDefaultActionHandlers();
 const runner = new PatchdollRunner(config, ai, actionHandlers);
 
-const healthServer = createServer(async (request, response) => {
+const httpServer = createServer(async (request, response) => {
   const path = new URL(request.url ?? "/", "http://localhost").pathname;
+
+  if (request.method === "POST" && path === "/webhooks/github") {
+    try {
+      await handleGithubWebhook(request, response);
+    } catch (error) {
+      sendJson(response, 500, {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+    return;
+  }
 
   if (request.method === "GET" && path === "/health") {
     response.writeHead(200, {
@@ -104,7 +117,7 @@ const slackIngressServer = createServer(async (request, response) => {
   }
 });
 
-healthServer.listen(config.server.port, config.server.host, () => {
+httpServer.listen(config.server.port, config.server.host, () => {
   console.log(
     stringifyLogJson({
       message: "patchdoll listening",
@@ -141,13 +154,13 @@ function shutdown(signal: NodeJS.Signals): void {
         signal
       })
     );
-    healthServer.closeAllConnections();
+    httpServer.closeAllConnections();
     slackIngressServer.closeAllConnections();
     process.exit(1);
   }, 5000);
   forceExit.unref();
 
-  closeServers([healthServer, slackIngressServer], async (error) => {
+  closeServers([httpServer, slackIngressServer], async (error) => {
     clearTimeout(forceExit);
     await rm(slackIngressSocketPath, { force: true });
 
