@@ -1,0 +1,24 @@
+{
+  "name": "patchdoll-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Event-triggered wrapper around AI CLI tools with adapter-mediated external actions.",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "start": "node packages/core/dist/server.js",
+    "check": "tsc -b",
+    "patchdoll:build": "docker build -t patchdoll:latest .",
+    "patchdoll:stop": "docker stop --timeout 15 patchdoll"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "typescript": "5.9.3"
+  }
+}

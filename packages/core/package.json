@@ -1,0 +1,37 @@
+{
+  "name": "@patchdoll/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Runnable Patchdoll service, runner, policy, config, and shared contracts.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    },
+    "./settings": {
+      "types": "./dist/settings.d.ts",
+      "default": "./dist/settings.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "check": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@patchdoll/provider-codex": "0.0.0"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "patchdollctl": "./dist/patchdollctl.js"
+  }
+}

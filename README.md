@@ -1,0 +1,335 @@
+# Patchdoll ゼロ (Zero)
+
+Slack-driven AI assistant for GitHub maintainers.
+
+You ask in Slack. Patchdoll sends the task to Codex inside a Docker container.
+Codex works in the mounted project folder, then Patchdoll posts the answer back
+to Slack.
+
+## Warning: GitHub Write Access
+
+You are playing with fire by granting an AI agent access to your GitHub
+organization or repositories. That can be useful fire. It can also burn down the
+kitchen if you hand it the wrong permissions and walk away for snacks.
+
+Give Patchdoll the least access it needs for the work you actually want it to
+do. Prefer repository-scoped access over organization-wide access, and prefer
+pull-request workflows over direct pushes to protected branches.
+
+Potential risks include:
+
+- unintended code changes, force pushes, branch deletions, or broken releases
+- malicious or mistaken changes caused by prompt injection in issues, pull
+  requests, comments, logs, docs, or Slack messages
+- accidental exposure of secrets, private source code, customer data, or
+  internal implementation details
+- dependency, workflow, or configuration changes that weaken CI, deployment,
+  security scanning, or branch protection
+- creation or modification of GitHub Actions workflows that can run with
+  repository credentials
+- changes to access controls, deploy keys, webhooks, repository settings, or
+  GitHub App permissions if the granted token allows them
+- large automated edits that are hard to review and easy to merge by mistake
+- commits or comments that appear to come from a trusted automation identity
+  even when the requested action was unsafe
+
+Use short-lived credentials when possible, review generated changes before
+merge, keep branch protections enabled, and audit the permissions granted to any
+GitHub App, token, or service account used by Patchdoll.
+
+## Prerequisites
+
+Use this when you just want Patchdoll running.
+
+You need:
+
+- Docker
+- a Slack app with a bot token and app token
+
+If you do not have Slack tokens yet, do the [Slack How-To](docs/slack-how-to.md)
+first.
+
+### 1. Build the image
+
+Run this from the `patchdolls/patchdoll` directory:
+
+```sh
+docker build -t patchdoll:latest .
+```
+
+### 2. Create the local Patchdoll folder
+
+```sh
+PATCHDOLL_HOME="$HOME/.patchdoll"
+mkdir -p "$PATCHDOLL_HOME"/{state,codex}
+chmod 700 "$PATCHDOLL_HOME" "$PATCHDOLL_HOME"/{state,codex}
+```
+
+### 3. Save your Slack secrets
+
+Paste your real Slack tokens:
+
+```sh
+cat > "$PATCHDOLL_HOME/secrets.env" <<'EOF'
+PATCHDOLL_SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
+PATCHDOLL_SLACK_APP_TOKEN=xapp-your-slack-app-token
+EOF
+chmod 600 "$PATCHDOLL_HOME/secrets.env"
+```
+
+If you want noninteractive Codex login, add `OPENAI_API_KEY=...` or
+`CODEX_ACCESS_TOKEN=...` to this same file. If neither is present, Patchdoll
+starts Codex device-code auth on first startup and stores the login state in
+`/patchdoll/codex`.
+
+### 4. Run Patchdoll
+
+Run this from the project you want Patchdoll to work on:
+
+```sh
+docker run -d --rm \
+  --name patchdoll \
+  -v "patchdoll-data:/patchdoll" \
+  -v "patchdoll-workspace:/workspace" \
+  -v "$PATCHDOLL_HOME/secrets.env:/run/secrets/patchdoll.env:ro" \
+  patchdoll:latest
+```
+
+### 5. Watch it start
+
+```sh
+docker logs -f patchdoll
+```
+
+On first startup, Codex may print a device-code login URL and code. Complete
+that browser flow once. The login is stored under `$PATCHDOLL_HOME/codex`, so
+later starts reuse it.
+
+Pressing Ctrl-C here only stops log watching. It does not stop Patchdoll.
+
+### 6. Try it in Slack
+
+In Slack, try:
+
+```text
+/patchdoll say hi
+```
+
+Or mention the app in a channel:
+
+```text
+@Patchdoll summarize this channel
+```
+
+Or send the app a direct message.
+
+### Stop Patchdoll
+
+```sh
+docker stop --timeout 15 patchdoll
+```
+
+That is the quick path. Sweet little win.
+
+## Slack How-To
+
+The Slack app setup guide now lives in [Slack How-To](docs/slack-how-to.md).
+
+## How Patchdoll Uses Your Folders
+
+Patchdoll uses fixed paths inside the container:
+
+- `/workspace`: the project Patchdoll can inspect or edit
+- `/patchdoll/state`: Patchdoll state database
+- `/patchdoll/codex`: Codex login and session data
+- `/run/secrets/patchdoll.env`: secret tokens
+
+You do not need a `config.json` for the normal setup. Patchdoll has defaults.
+
+Use a config file only when you want advanced overrides. Most people can skip
+it.
+
+## Advanced Usage
+
+Use this section when you want to tune the runtime.
+
+### Use mounted paths for data and a local repo
+
+Use host paths when you want Patchdoll state on disk and want Codex to work on
+a specific local checkout instead of an empty Docker volume.
+
+Set `PATCHDOLL_HOME` to the folder that contains your `secrets.env` file, and
+set `PATCHDOLL_WORKSPACE` to the repo Patchdoll should inspect or edit:
+
+```sh
+PATCHDOLL_HOME="$HOME/.patchdoll"
+PATCHDOLL_WORKSPACE="$HOME/src/my-repo"
+
+docker run -d --rm \
+  --name patchdoll \
+  -v "$PATCHDOLL_HOME:/patchdoll" \
+  -v "$PATCHDOLL_WORKSPACE:/workspace" \
+  -v "$PATCHDOLL_HOME/secrets.env:/run/secrets/patchdoll.env:ro" \
+  patchdoll:latest
+```
+
+Note: startup may adjust ownership or permissions inside `/workspace` so the
+container's `codex` user can write there. Use a disposable branch or clone if
+you want an easy undo button.
+
+### Use a Docker volume as the workspace
+
+Patchdoll only cares that the project is available at `/workspace`.
+
+This works:
+
+```sh
+-v patchdoll-workspace:/workspace
+```
+
+A named volume starts empty. Use it for scratch work or copy files into it
+before asking Patchdoll to work there.
+
+### Optional runtime knobs
+
+You can add these `-e` values to `docker run` when needed:
+
+```sh
+-e PATCHDOLL_AI_TIMEOUT_SECONDS=900
+-e PATCHDOLL_SLACK_COMMAND=/patchdoll
+```
+
+Keep Slack tokens and API keys in `secrets.env`, not in `-e` values.
+
+### Environment reference
+
+Patchdoll reads secrets from `/run/secrets/patchdoll.env` and runtime knobs from
+the container environment. Keep those two buckets separate.
+
+Secrets file values:
+
+| Name | Required | Purpose |
+| --- | --- | --- |
+| `PATCHDOLL_SLACK_BOT_TOKEN` | yes | Slack bot token, usually starts with `xoxb-`. |
+| `PATCHDOLL_SLACK_APP_TOKEN` | yes | Slack Socket Mode app token, usually starts with `xapp-`. |
+| `OPENAI_API_KEY` | no | Noninteractive Codex login with an OpenAI API key. |
+| `CODEX_ACCESS_TOKEN` | no | Noninteractive Codex login with a Codex access token. |
+| `PATCHDOLL_GITHUB_APP_ID` | no | GitHub App ID for temporary Codex `gh` access. |
+| `PATCHDOLL_GITHUB_APP_INSTALLATION_ID` | no | GitHub App installation ID. |
+| `PATCHDOLL_GITHUB_APP_PRIVATE_KEY_BASE64` | no | Base64-encoded GitHub App PEM private key. |
+
+If one GitHub App value is set, all three GitHub App values must be set. When
+configured, Patchdoll mints a short-lived installation token for each Codex task
+and injects it as `GH_TOKEN` and `GITHUB_TOKEN`.
+
+Container environment values:
+
+| Name | Default | Purpose |
+| --- | --- | --- |
+| `HOST` | `0.0.0.0` | Health server bind host. |
+| `PORT` | `3000` | Health server port. |
+| `PATCHDOLL_AI_TIMEOUT_SECONDS` | `900` | Codex task timeout. |
+| `PATCHDOLL_AI_MAX_CONCURRENT_RUNS` | `1` | Maximum concurrent Codex tasks. |
+| `PATCHDOLL_CODEX_BYPASS_APPROVALS_AND_SANDBOX` | `true` | Whether Codex runs with bypassed approvals and sandbox. Use `0`, `false`, `no`, or `off` to disable. |
+| `PATCHDOLL_CODEX_AUTH_ON_STARTUP` | `auto` | Codex startup auth mode. Use `0`, `false`, `no`, or `off` to skip startup auth. |
+| `PATCHDOLL_CODEX_PROFILE` | unset | Optional Codex profile passed to new Codex sessions. |
+| `PATCHDOLL_CODEX_SKIP_GIT_REPO_CHECK` | `true` | Adds `--skip-git-repo-check` unless disabled. |
+| `PATCHDOLL_CODEX_THREAD_CONTEXT_MAX_CHARS` | `60000` | Maximum Slack transcript characters included in the Codex prompt. |
+| `PATCHDOLL_SLACK_COMMAND` | `/patchdoll` | Slash command name the Slack bridge listens for. |
+| `PATCHDOLL_SLACK_THREAD_MAX_MESSAGES` | `100` | Maximum Slack thread messages fetched. Use `0` to disable thread fetching. |
+| `PATCHDOLL_SLACK_THREAD_MAX_MESSAGE_CHARS` | `4000` | Maximum characters kept per Slack thread message. |
+| `PATCHDOLL_ADMINS` | unset | Comma- or newline-separated Slack user IDs allowed to change settings. |
+| `PATCHDOLL_LOG_LEVEL` | `info` | Container console log level: `warn`, `info`, `debug`, or `trace`. |
+
+Internal runtime values such as `CODEX_HOME`, `HOME`, `PATCHDOLL_TASK`,
+`GH_TOKEN`, `GITHUB_TOKEN`, and `GH_PROMPT_DISABLED` are set by Patchdoll for the
+Codex process. Do not configure them yourself.
+
+### Let Slack admins change Patchdoll settings
+
+Patchdoll is secure by default. Slack users cannot change Patchdoll settings
+unless you explicitly list their Slack user IDs in `PATCHDOLL_ADMINS`.
+
+```sh
+-e PATCHDOLL_ADMINS=U12345678,W12345678
+```
+
+Use Slack user IDs, not display names. See
+[Allow Slack Admin Settings Changes](docs/slack-how-to.md#optional-allow-slack-admin-settings-changes)
+for how to copy the right ID from Slack.
+
+After that, listed admins can ask Patchdoll to update non-secret runtime
+settings:
+
+```text
+/patchdoll set Codex reasoning effort to high
+/patchdoll set Codex model to gpt-5.5
+```
+
+## Build Notes
+
+Build the image from this directory:
+
+```sh
+docker build -t patchdoll:latest .
+```
+
+The build expects `package-lock.json` to be present.
+
+## Troubleshooting
+
+### Patchdoll says a Slack token is missing
+
+Check that your secret file is mounted here:
+
+```text
+/run/secrets/patchdoll.env
+```
+
+And that it contains:
+
+```text
+PATCHDOLL_SLACK_BOT_TOKEN=xoxb-...
+PATCHDOLL_SLACK_APP_TOKEN=xapp-...
+```
+
+Do not pass Slack tokens with `-e` or `--env-file`. Patchdoll intentionally reads
+them from the mounted secrets file.
+
+### Slash command works, but mentions do not
+
+Invite the app into the channel:
+
+```text
+/invite @Patchdoll
+```
+
+Also check that `app_mention` is subscribed under **Event Subscriptions**.
+
+### Direct messages do not work
+
+Check that `message.im` is subscribed under **Event Subscriptions** and that App
+Home allows messages.
+
+### Patchdoll cannot answer about a thread
+
+Make sure the bot has the matching history scope for that conversation:
+
+- public channels: `channels:history`
+- private channels: `groups:history`
+- direct messages: `im:history`
+- group DMs: `mpim:history`
+
+The app also has to be present in the conversation.
+
+## Development
+
+Patchdoll is a small set of pieces:
+
+- the Slack bridge receives Slack messages
+- the runner prepares a Codex task
+- the Codex provider runs Codex in `/workspace`
+- the policy layer checks any proposed external action
+
+The main rule: Codex can work inside the container, while Patchdoll owns the
+outside boundary.
