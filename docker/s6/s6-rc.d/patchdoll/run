@@ -1,0 +1,5 @@
+#!/command/execlineb -P
+with-contenv
+cd /workspace
+s6-setuidgid patchdoll
+node /app/packages/core/dist/server.js
