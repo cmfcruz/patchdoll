@@ -8,7 +8,7 @@ const patchdollPath = "/webhooks/slack";
 const commandName = process.env.PATCHDOLL_SLACK_COMMAND || "/patchdoll";
 const maxSlackTextLength = 3900;
 const initialProgressText = "hmm?";
-const requestFailurePrefix = "That’s annoying, but manageable";
+const requestFailurePrefix = "That's annoying, but manageable";
 
 const app = new App({
   token: requiredSecret("PATCHDOLL_SLACK_BOT_TOKEN"),
@@ -177,7 +177,9 @@ app.message(async ({ message, say, client }) => {
     await app.start();
     app.logger.info("Patchdoll Slack Bolt bridge started");
   } catch (error) {
-    app.logger.error(`Patchdoll Slack Bolt bridge failed: ${messageOf(error)}`);
+    app.logger.error(
+      logSafeText(`Patchdoll Slack Bolt bridge failed: ${messageOf(error)}`)
+    );
     process.exit(1);
   }
 })();
@@ -208,7 +210,9 @@ async function shutdown(signal) {
   } catch (error) {
     clearTimeout(forceExit);
     app.logger.error(
-      `Patchdoll Slack Bolt bridge shutdown failed: ${messageOf(error)}`
+      logSafeText(
+        `Patchdoll Slack Bolt bridge shutdown failed: ${messageOf(error)}`
+      )
     );
     process.exit(1);
   }
@@ -404,7 +408,7 @@ function progressText(event) {
 
   return event && event.message
     ? String(event.message)
-    : "Patchdoll is working…";
+    : "Patchdoll is working...";
 }
 
 function isLowSignalProgressEvent(event) {
@@ -706,4 +710,10 @@ function parsePositiveInteger(value, fallback) {
 
 function messageOf(error) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function logSafeText(value) {
+  return String(value).replace(/[\u007f-\uffff]/g, (character) =>
+    `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`
+  );
 }

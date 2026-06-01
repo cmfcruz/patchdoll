@@ -6,6 +6,7 @@ import { createDefaultActionHandlers } from "./actions.js";
 import { createAiProvider } from "./ai.js";
 import { readBody, sendJson, startNdjson, wantsNdjson, writeNdjson } from "./http.js";
 import { loadConfig } from "./config.js";
+import { stringifyLogJson } from "./log.js";
 import { PatchdollRunner } from "./runner.js";
 import type { JsonValue, NormalizedEvent } from "./types.js";
 
@@ -105,7 +106,7 @@ const slackIngressServer = createServer(async (request, response) => {
 
 healthServer.listen(config.server.port, config.server.host, () => {
   console.log(
-    JSON.stringify({
+    stringifyLogJson({
       message: "patchdoll listening",
       host: config.server.host,
       port: config.server.port
@@ -127,7 +128,7 @@ function shutdown(signal: NodeJS.Signals): void {
   shuttingDown = true;
 
   console.log(
-    JSON.stringify({
+    stringifyLogJson({
       message: "patchdoll shutting down",
       signal
     })
@@ -135,7 +136,7 @@ function shutdown(signal: NodeJS.Signals): void {
 
   const forceExit = setTimeout(() => {
     console.error(
-      JSON.stringify({
+      stringifyLogJson({
         message: "patchdoll shutdown timed out",
         signal
       })
@@ -152,7 +153,7 @@ function shutdown(signal: NodeJS.Signals): void {
 
     if (error) {
       console.error(
-        JSON.stringify({
+        stringifyLogJson({
           message: "patchdoll shutdown failed",
           error: error.message
         })
@@ -176,7 +177,7 @@ async function listenUnix(server: Server, socketPath: string): Promise<void> {
     const onListening = () => {
       server.off("error", onError);
       console.log(
-        JSON.stringify({
+        stringifyLogJson({
           message: "patchdoll slack ingress listening",
           socketPath
         })
