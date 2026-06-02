@@ -115,8 +115,12 @@ RUN set -eux; \
   rm -f /tmp/s6-overlay-*.tar.xz
 
 RUN set -eux; \
+  curl -fsSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc \
+    | tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null; \
+  echo "deb [signed-by=/etc/apt/trusted.gpg.d/ngrok.asc] https://ngrok-agent.s3.amazonaws.com bookworm main" \
+    > /etc/apt/sources.list.d/ngrok.list; \
   apt-get update; \
-  apt-get install -y --no-install-recommends ca-certificates git gh; \
+  apt-get install -y --no-install-recommends ca-certificates gawk git gh grep ngrok; \
   rm -rf /var/lib/apt/lists/*
 
 ENV PATH="/app/node_modules/.bin:${PATH}" \
@@ -170,6 +174,8 @@ RUN rm -f /tmp/patchdoll-validation-ok \
   /etc/s6-overlay/s6-rc.d/codex-auth/up \
   /etc/s6-overlay/s6-rc.d/codex-worker/run \
   /etc/s6-overlay/s6-rc.d/codex-worker/run.sh \
+  /etc/s6-overlay/s6-rc.d/ngrok-tunnel/run \
+  /etc/s6-overlay/s6-rc.d/ngrok-tunnel/run.sh \
   /etc/s6-overlay/s6-rc.d/patchdoll/run \
   /etc/s6-overlay/s6-rc.d/slack-bridge/run \
   /usr/local/bin/patchdoll-peercred \

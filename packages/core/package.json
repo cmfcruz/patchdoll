@@ -26,7 +26,8 @@
     "check": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@patchdoll/provider-codex": "0.0.0"
+    "@patchdoll/provider-codex": "0.0.0",
+    "dotenv": "17.4.2"
   },
   "engines": {
     "node": ">=24"

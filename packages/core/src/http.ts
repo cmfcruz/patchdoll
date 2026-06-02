@@ -1,10 +1,19 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-export async function readBody(request: IncomingMessage): Promise<Buffer> {
+export async function readBody(
+  request: IncomingMessage,
+  options: { maxBytes?: number } = {}
+): Promise<Buffer> {
   const chunks: Buffer[] = [];
+  let totalBytes = 0;
 
   for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    totalBytes += buffer.length;
+    if (options.maxBytes !== undefined && totalBytes > options.maxBytes) {
+      throw new Error(`Request body exceeds ${options.maxBytes} bytes`);
+    }
+    chunks.push(buffer);
   }
 
   return Buffer.concat(chunks);
