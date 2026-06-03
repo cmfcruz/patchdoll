@@ -7,9 +7,14 @@ import type { JsonValue } from "./types.js";
 export const PATCHDOLL_STATE_DB_PATH = "/patchdoll/state/patchdoll.sqlite";
 
 export const DEFAULT_SETTINGS = {
+  "ai.provider": "codex",
   "ai.timeoutSeconds": 900,
   "ai.maxConcurrentRuns": 1,
   "ai.bypassSandboxAndApprovals": true,
+  "claude.model": "sonnet",
+  "claude.effort": "high",
+  "claude.permissionMode": "bypassPermissions",
+  "claude.maxTurns": 0,
   "codex.model": "gpt-5.5",
   "codex.reasoningEffort": "medium",
   "codex.fastMode": false,
@@ -17,10 +22,16 @@ export const DEFAULT_SETTINGS = {
 } as const satisfies Record<string, JsonValue>;
 
 export const CODEX_REASONING_EFFORTS = ["minimal", "low", "medium", "high", "xhigh"] as const;
+export const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 const SETTING_DEFINITIONS: Record<string, (value: JsonValue) => JsonValue> = {
+  "ai.provider": providerName,
   "ai.timeoutSeconds": positiveInteger,
   "ai.maxConcurrentRuns": positiveInteger,
   "ai.bypassSandboxAndApprovals": booleanValue,
+  "claude.model": nonEmptyString,
+  "claude.effort": enumValue([...CLAUDE_EFFORTS]),
+  "claude.permissionMode": enumValue(["default", "acceptEdits", "bypassPermissions", "plan"]),
+  "claude.maxTurns": nonNegativeInteger,
   "codex.model": nonEmptyString,
   "codex.reasoningEffort": enumValue([...CODEX_REASONING_EFFORTS]),
   "codex.fastMode": booleanValue,
@@ -112,7 +123,14 @@ function initializeSettingsDatabase(db: DatabaseSync): void {
      WHERE key = ?
         OR key LIKE ?`
   ).run("patchdoll.mode", "capabilities.%");
-  db.prepare("DELETE FROM patchdoll_settings WHERE key = ?").run("ai.provider");
+}
+
+function providerName(value: JsonValue): string {
+  const text = nonEmptyString(value).toLowerCase();
+  if (!/^[a-z][a-z0-9-]*$/.test(text)) {
+    throw new Error("Provider must start with a letter and contain only lowercase letters, numbers, and hyphens");
+  }
+  return text;
 }
 
 function enumValue(allowed: string[]): (value: JsonValue) => string {
@@ -131,6 +149,12 @@ function nonEmptyString(value: JsonValue): string {
 function positiveInteger(value: JsonValue): number {
   const number = typeof value === "number" ? value : Number.parseInt(String(value), 10);
   if (!Number.isInteger(number) || number < 1) throw new Error("Value must be a positive integer");
+  return number;
+}
+
+function nonNegativeInteger(value: JsonValue): number {
+  const number = typeof value === "number" ? value : Number.parseInt(String(value), 10);
+  if (!Number.isInteger(number) || number < 0) throw new Error("Value must be a non-negative integer");
   return number;
 }
 

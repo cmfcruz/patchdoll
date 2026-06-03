@@ -1,5 +1,3 @@
 #!/command/execlineb -P
 with-contenv
-cd /app/packages/adapter-slack
-s6-setuidgid patchdoll
-node /app/packages/adapter-slack/app.cjs
+/bin/bash /etc/s6-overlay/s6-rc.d/slack-bridge/run.sh

@@ -1,72 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-log() {
-  echo "codex-auth: $*" >&2
-}
-
-is_disabled() {
-  case "${1,,}" in
-    0|false|no|off) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-is_enabled() {
-  case "${1,,}" in
-    1|true|yes|on) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-secrets_file="/run/secrets/patchdoll.env"
-
-trim() {
-  local value="$1"
-  value="${value#"${value%%[![:space:]]*}"}"
-  value="${value%"${value##*[![:space:]]}"}"
-  printf '%s' "$value"
-}
-
-secret_value() {
-  local name="$1"
-  local line key value
-
-  [ -r "$secrets_file" ] || return 1
-
-  while IFS= read -r line || [ -n "$line" ]; do
-    line="$(trim "$line")"
-    [ -n "$line" ] || continue
-    [[ "$line" != \#* ]] || continue
-    if [[ "$line" == export\ * ]]; then
-      line="$(trim "${line#export }")"
-    fi
-    if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
-      key="${BASH_REMATCH[1]}"
-      value="$(trim "${BASH_REMATCH[2]}")"
-      if [ "$key" = "$name" ]; then
-        if [[ "$value" == \"*\" && "$value" == *\" ]] || [[ "$value" == \'*\' && "$value" == *\' ]]; then
-          value="${value:1:${#value}-2}"
-        fi
-        printf '%s' "$value"
-        return 0
-      fi
-    fi
-  done < "$secrets_file"
-
-  return 1
-}
-
-reject_secret_env() {
-  local name="$1"
-  if [ -n "${!name:-}" ]; then
-    log "${name} must be configured in ${secrets_file}, not the container environment"
-    exit 1
-  fi
-}
+# shellcheck source=../../scripts/lib.sh
+. /etc/s6-overlay/scripts/lib.sh
+log_tag="codex-auth"
 
 uses_codex_provider() {
-  return 0
+  [ "$(selected_provider)" = "codex" ]
 }
 
 auth_on_startup="${PATCHDOLL_CODEX_AUTH_ON_STARTUP:-auto}"
@@ -129,10 +69,10 @@ run_codex() {
 }
 
 if [ -n "$codex_access_token" ]; then
-  log "Authenticating Codex with CODEX_ACCESS_TOKEN from ${secrets_file}"
+  log "Authenticating Codex with CODEX_ACCESS_TOKEN from runtime secrets"
   printf '%s\n' "$codex_access_token" | run_codex login --with-access-token
 elif [ -n "$openai_api_key" ]; then
-  log "Authenticating Codex with OPENAI_API_KEY from ${secrets_file}"
+  log "Authenticating Codex with OPENAI_API_KEY from runtime secrets"
   printf '%s\n' "$openai_api_key" | run_codex login --with-api-key
 elif run_codex login status >/dev/null 2>&1; then
   log "Codex is already authenticated"

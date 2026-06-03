@@ -196,16 +196,30 @@ before asking Patchdoll to work there.
 You can add these `-e` values to `docker run` when needed:
 
 ```sh
+-e PATCHDOLL_AI_PROVIDER=codex
 -e PATCHDOLL_AI_TIMEOUT_SECONDS=900
 -e PATCHDOLL_SLACK_COMMAND=/patchdoll
 ```
 
-Keep Slack tokens and API keys in `secrets.env`, not in `-e` values.
+Prefer keeping Slack tokens and OAuth tokens in `secrets.env` instead of `-e`
+values.
+
+If a deployment platform can only provide secrets as container environment
+variables, Patchdoll moves a narrow allowlist of secret env vars into
+`/run/secrets/patchdoll.env` during early s6 initialization when that path is
+writable. If `/run/secrets` is a read-only Docker secrets mount, Patchdoll falls
+back to `/run/patchdoll/secrets.env`. In both cases it removes the allowlisted
+secrets from the s6 service environment before user-facing services start. This
+reduces accidental inheritance by Codex or other child processes; it does not
+hide those values from the container runtime, Docker metadata, root users, or
+processes with access to the secrets file.
 
 ### Environment reference
 
-Patchdoll reads secrets from `/run/secrets/patchdoll.env` and runtime knobs from
-the container environment. Keep those two buckets separate.
+Patchdoll reads secrets from `/run/secrets/patchdoll.env`, with
+`/run/patchdoll/secrets.env` as the runtime fallback for env-file migrations when
+Docker mounts `/run/secrets` read-only. Runtime knobs stay in the container
+environment. Keep those buckets separate.
 
 Secrets file values:
 
@@ -215,6 +229,8 @@ Secrets file values:
 | `PATCHDOLL_SLACK_APP_TOKEN` | yes | Slack Socket Mode app token, usually starts with `xapp-`. |
 | `OPENAI_API_KEY` | no | Noninteractive Codex login with an OpenAI API key. |
 | `CODEX_ACCESS_TOKEN` | no | Noninteractive Codex login with a Codex access token. |
+| `CLAUDE_CODE_OAUTH_TOKEN` | no | Noninteractive Claude Code OAuth authentication when `PATCHDOLL_AI_PROVIDER=claude`. |
+| `ANTHROPIC_API_KEY` | no | Noninteractive Claude Code login with an Anthropic API key when `PATCHDOLL_AI_PROVIDER=claude`. |
 | `PATCHDOLL_GITHUB_APP_ID` | no | GitHub App ID for temporary Codex `gh` access. |
 | `PATCHDOLL_GITHUB_APP_INSTALLATION_ID` | no | GitHub App installation ID. |
 | `PATCHDOLL_GITHUB_APP_PRIVATE_KEY_BASE64` | no | Base64-encoded GitHub App PEM private key. |
@@ -231,13 +247,14 @@ Container environment values:
 | --- | --- | --- |
 | `HOST` | `0.0.0.0` | Health server bind host. |
 | `PORT` | `3000` | Health server port. |
-| `PATCHDOLL_AI_TIMEOUT_SECONDS` | `900` | Codex task timeout. |
-| `PATCHDOLL_AI_MAX_CONCURRENT_RUNS` | `1` | Maximum concurrent Codex tasks. |
+| `PATCHDOLL_AI_PROVIDER` | `codex` | AI provider to use. Use `codex` or `claude`. |
+| `PATCHDOLL_AI_TIMEOUT_SECONDS` | `900` | AI task timeout (applies to the active provider). |
+| `PATCHDOLL_AI_MAX_CONCURRENT_RUNS` | `1` | Maximum concurrent AI tasks (applies to the active provider). |
 | `PATCHDOLL_CODEX_BYPASS_APPROVALS_AND_SANDBOX` | `true` | Whether Codex runs with bypassed approvals and sandbox. Use `0`, `false`, `no`, or `off` to disable. |
 | `PATCHDOLL_CODEX_AUTH_ON_STARTUP` | `auto` | Codex startup auth mode. Use `0`, `false`, `no`, or `off` to skip startup auth. |
 | `PATCHDOLL_CODEX_PROFILE` | unset | Optional Codex profile passed to new Codex sessions. |
 | `PATCHDOLL_CODEX_SKIP_GIT_REPO_CHECK` | `true` | Adds `--skip-git-repo-check` unless disabled. |
-| `PATCHDOLL_CODEX_THREAD_CONTEXT_MAX_CHARS` | `60000` | Maximum Slack transcript characters included in the Codex prompt. |
+| `PATCHDOLL_THREAD_CONTEXT_MAX_CHARS` | `60000` | Maximum Slack transcript characters included in the agent prompt. |
 | `PATCHDOLL_SLACK_COMMAND` | `/patchdoll` | Slash command name the Slack bridge listens for. |
 | `PATCHDOLL_SLACK_THREAD_MAX_MESSAGES` | `100` | Maximum Slack thread messages fetched. Use `0` to disable thread fetching. |
 | `PATCHDOLL_SLACK_THREAD_MAX_MESSAGE_CHARS` | `4000` | Maximum characters kept per Slack thread message. |
@@ -250,6 +267,43 @@ Container environment values:
 Internal runtime values such as `CODEX_HOME`, `HOME`, `PATCHDOLL_TASK`,
 `GH_TOKEN`, `GITHUB_TOKEN`, and `GH_PROMPT_DISABLED` are set by Patchdoll for the
 Codex process. Do not configure them yourself.
+
+### Experimental Claude provider scaffold
+
+Patchdoll has early provider plumbing for Claude Code behind:
+
+```sh
+PATCHDOLL_AI_PROVIDER=claude
+```
+
+The current scaffold installs the pinned Claude Code npm package and uses print
+mode with JSON output, model selection, permission mode, and max-turn settings.
+For noninteractive authentication, generate a long-lived Claude Code OAuth token:
+
+```sh
+claude setup-token
+```
+
+Then store the printed token in `/run/secrets/patchdoll.env`:
+
+```sh
+CLAUDE_CODE_OAUTH_TOKEN=...
+```
+
+Patchdoll scrubs allowlisted Claude credentials from the inherited service
+environment during startup. Prefer the secrets file; `-e`/`--env-file` works as
+a migration path, with the usual Docker metadata caveats, because apparently
+secrets still enjoy paperwork.
+
+Useful DB-backed settings:
+
+```sh
+patchdollctl settings set ai.provider claude
+patchdollctl settings set claude.model sonnet
+patchdollctl settings set claude.effort high
+patchdollctl settings set claude.permissionMode default
+patchdollctl settings set claude.maxTurns 0
+```
 
 ### Let Slack admins change Patchdoll settings
 

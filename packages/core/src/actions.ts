@@ -239,6 +239,7 @@ function flattenSettingsPatch(value: Record<string, JsonValue>): Record<string, 
   for (const [key, item] of Object.entries(value)) {
     if (key === "ai" && isJsonObject(item)) addPrefixed(values, "ai", item);
     else if (key === "codex" && isJsonObject(item)) addPrefixed(values, "codex", item);
+    else if (key === "claude" && isJsonObject(item)) addPrefixed(values, "claude", item);
     else values[key] = item;
   }
   return values;
