@@ -120,8 +120,13 @@ RUN set -eux; \
   echo "deb [signed-by=/etc/apt/trusted.gpg.d/ngrok.asc] https://ngrok-agent.s3.amazonaws.com bookworm main" \
     > /etc/apt/sources.list.d/ngrok.list; \
   apt-get update; \
-  apt-get install -y --no-install-recommends ca-certificates gawk git gh grep ngrok; \
-  rm -rf /var/lib/apt/lists/*
+  apt-get install -y --no-install-recommends \
+    ca-certificates gawk git gh grep ngrok jq \
+    podman podman-docker buildah skopeo crun \
+    fuse-overlayfs slirp4netns uidmap; \
+  rm -rf /var/lib/apt/lists/*; \
+  : "podman-docker drops a docker(1) shim; silence its 'Emulate Docker CLI' notice"; \
+  touch /etc/containers/nodocker
 
 ENV PATH="/app/node_modules/.bin:${PATH}" \
   NODE_ENV=production \
@@ -134,6 +139,10 @@ ENV PATH="/app/node_modules/.bin:${PATH}" \
 
 WORKDIR /workspace
 
+# Rootless podman for the provider users: the subuid/subgid ranges below live
+# in the image, but they only work if the host enables user namespaces
+# (user.max_user_namespaces > 0, and nested userns when this image is itself
+# run in a container). That sysctl is host kernel state and cannot be set here.
 RUN groupmod -n patchdoll node \
   && usermod -l patchdoll -d /home/patchdoll -m node \
   && groupadd --system patchdoll-ipc \
@@ -141,6 +150,8 @@ RUN groupmod -n patchdoll node \
   && groupadd --system claude \
   && useradd --system --create-home --home-dir /home/codex --gid codex --groups patchdoll-ipc codex \
   && useradd --system --create-home --home-dir /home/claude --gid claude --groups patchdoll-ipc claude \
+  && usermod --add-subuids 100000-165535 --add-subgids 100000-165535 codex \
+  && usermod --add-subuids 165536-231071 --add-subgids 165536-231071 claude \
   && usermod --append --groups patchdoll-ipc patchdoll \
   && mkdir -p /app/slack /run/secrets /run/patchdoll/providers /workspace /patchdoll/state /patchdoll/codex /patchdoll/claude /etc/codex \
   && chown -R patchdoll:patchdoll /app \
