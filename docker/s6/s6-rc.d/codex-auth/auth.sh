@@ -34,7 +34,7 @@ if ! command -v "$codex_bin" >/dev/null 2>&1; then
   exit 1
 fi
 
-codex_home="/patchdoll/codex"
+codex_home="/patchdoll/agent"
 state_dir="/patchdoll/state"
 operator_agents="/etc/codex/AGENTS.md"
 export CODEX_HOME="$codex_home"
@@ -58,14 +58,14 @@ if [ "$(stat -c '%a' "$operator_agents")" != "444" ]; then
   exit 1
 fi
 
-chown codex:codex "$codex_home"
-chown -R codex:codex "$codex_home"
-chown -R codex:patchdoll-ipc "$state_dir"
+chown agent:agent "$codex_home"
+chown -R agent:agent "$codex_home"
+chown -R agent:patchdoll-ipc "$state_dir"
 find "$state_dir" -type d -exec chmod 2770 {} +
 find "$state_dir" -type f -exec chmod 0660 {} +
 
 run_codex() {
-  s6-setuidgid codex "$codex_bin" "$@"
+  s6-setuidgid agent "$codex_bin" "$@"
 }
 
 if [ -n "$codex_access_token" ]; then

@@ -120,8 +120,13 @@ RUN set -eux; \
   echo "deb [signed-by=/etc/apt/trusted.gpg.d/ngrok.asc] https://ngrok-agent.s3.amazonaws.com bookworm main" \
     > /etc/apt/sources.list.d/ngrok.list; \
   apt-get update; \
-  apt-get install -y --no-install-recommends ca-certificates gawk git gh grep ngrok; \
-  rm -rf /var/lib/apt/lists/*
+  apt-get install -y --no-install-recommends \
+    ca-certificates gawk git gh grep ngrok jq \
+    podman podman-docker buildah skopeo crun \
+    fuse-overlayfs slirp4netns uidmap; \
+  rm -rf /var/lib/apt/lists/*; \
+  : "podman-docker drops a docker(1) shim; silence its 'Emulate Docker CLI' notice"; \
+  touch /etc/containers/nodocker
 
 ENV PATH="/app/node_modules/.bin:${PATH}" \
   NODE_ENV=production \
@@ -134,30 +139,36 @@ ENV PATH="/app/node_modules/.bin:${PATH}" \
 
 WORKDIR /workspace
 
+# Rootless podman for the agent user: the subuid/subgid range below lives in
+# the image, but it only works if the host enables user namespaces
+# (user.max_user_namespaces > 0, and nested userns when this image is itself
+# run in a container). That sysctl is host kernel state and cannot be set here.
+#
+# A single `agent` user runs whichever provider (Codex or Claude) is selected;
+# the runtime invariant is that only one agent runs at a time, so per-provider
+# OS users are unnecessary. One user means one home (/patchdoll/agent) and one
+# subuid range instead of hand-partitioned per-provider ranges.
 RUN groupmod -n patchdoll node \
   && usermod -l patchdoll -d /home/patchdoll -m node \
   && groupadd --system patchdoll-ipc \
-  && groupadd --system codex \
-  && groupadd --system claude \
-  && useradd --system --create-home --home-dir /home/codex --gid codex --groups patchdoll-ipc codex \
-  && useradd --system --create-home --home-dir /home/claude --gid claude --groups patchdoll-ipc claude \
+  && groupadd --system agent \
+  && useradd --system --create-home --home-dir /home/agent --gid agent --groups patchdoll-ipc agent \
+  && usermod --add-subuids 100000-165535 --add-subgids 100000-165535 agent \
   && usermod --append --groups patchdoll-ipc patchdoll \
-  && mkdir -p /app/slack /run/secrets /run/patchdoll/providers /workspace /patchdoll/state /patchdoll/codex /patchdoll/claude /etc/codex \
+  && mkdir -p /app/slack /run/secrets /run/patchdoll/providers /workspace /patchdoll/state /patchdoll/agent /etc/codex \
   && chown -R patchdoll:patchdoll /app \
   && chown root:patchdoll /run/secrets \
   && chmod 0750 /run/secrets \
   && chown patchdoll:patchdoll-ipc /run/patchdoll \
   && chmod 2770 /run/patchdoll \
-  && chown -R codex:patchdoll-ipc /run/patchdoll/providers /patchdoll/codex \
-  && chown -R claude:patchdoll-ipc /patchdoll/claude \
-  && chown -R codex:patchdoll-ipc /workspace \
+  && chown -R agent:patchdoll-ipc /run/patchdoll/providers /patchdoll/agent \
+  && chown -R agent:patchdoll-ipc /workspace \
   && chown root:root /etc/codex \
   && chmod 0555 /etc/codex \
   && chmod 2770 /run/patchdoll/providers \
-  && chmod 0770 /patchdoll/codex \
-  && chmod 0770 /patchdoll/claude \
+  && chmod 0770 /patchdoll/agent \
   && chmod 2770 /workspace \
-  && chown -R codex:patchdoll-ipc /patchdoll/state \
+  && chown -R agent:patchdoll-ipc /patchdoll/state \
   && chmod 2770 /patchdoll/state
 
 COPY --from=prod-deps --chown=patchdoll:patchdoll /app/package.json /app/package.json

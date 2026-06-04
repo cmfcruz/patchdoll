@@ -43,7 +43,7 @@ const DEFAULT_CODEX_ENV_ALLOWLIST = [
 
 const SESSION_DISCOVERY_WINDOW_MS = 10000;
 const MAX_CAPTURED_OUTPUT_BYTES = 256000;
-const CODEX_HOME = "/patchdoll/codex";
+const CODEX_HOME = "/patchdoll/agent";
 const MODEL_INSTRUCTIONS_FILE = "/etc/codex/AGENTS.md";
 const STATE_DIR = "/patchdoll/state";
 const PATCHDOLL_WORKDIR = "/workspace";

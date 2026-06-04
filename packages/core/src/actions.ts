@@ -198,7 +198,7 @@ function quote(value: string): string {
 }
 
 function codexExecpolicyPath(): string {
-  return join("/patchdoll/codex", "execpolicy.rules");
+  return join("/patchdoll/agent", "execpolicy.rules");
 }
 
 function isJsonObject(value: JsonValue | undefined): value is Record<string, JsonValue> {

@@ -12,25 +12,25 @@ fi
 
 socket_path="/run/patchdoll/providers/claude.sock"
 socket_dir="$(dirname "$socket_path")"
-claude_home="/patchdoll/claude"
+claude_home="/patchdoll/agent"
 state_dir="/patchdoll/state"
 workspace_dir="/workspace"
 
 mkdir -p /run/patchdoll "$socket_dir" "$claude_home" "$state_dir" "$workspace_dir"
 chown patchdoll:patchdoll-ipc /run/patchdoll
 chmod 2770 /run/patchdoll
-chown claude:patchdoll-ipc "$socket_dir" "$claude_home"
+chown agent:patchdoll-ipc "$socket_dir" "$claude_home"
 chmod 2770 "$socket_dir"
 chmod 0770 "$claude_home"
 if [ -d /etc/claude/skills ]; then
   mkdir -p "$claude_home/skills"
   cp -Rn /etc/claude/skills/. "$claude_home/skills/"
-  chown -R claude:patchdoll-ipc "$claude_home/skills"
+  chown -R agent:patchdoll-ipc "$claude_home/skills"
 fi
-chown -R claude:patchdoll-ipc "$state_dir"
+chown -R agent:patchdoll-ipc "$state_dir"
 find "$state_dir" -type d -exec chmod 2770 {} +
 find "$state_dir" -type f -exec chmod 0660 {} +
-if chown -R claude:patchdoll-ipc "$workspace_dir"; then
+if chown -R agent:patchdoll-ipc "$workspace_dir"; then
   find "$workspace_dir" -type d -exec chmod 2770 {} +
   find "$workspace_dir" -type f -exec chmod g+rw {} +
 else
@@ -59,7 +59,7 @@ if ! command -v claude >/dev/null 2>&1; then
 fi
 
 if command -v git >/dev/null 2>&1 && command -v gh >/dev/null 2>&1; then
-  s6-setuidgid claude git config --global --replace-all credential.https://github.com.helper '!gh auth git-credential'
+  s6-setuidgid agent git config --global --replace-all credential.https://github.com.helper '!gh auth git-credential'
 fi
 
-exec s6-setuidgid claude node /app/packages/provider-claude/dist/worker.js
+exec s6-setuidgid agent node /app/packages/provider-claude/dist/worker.js

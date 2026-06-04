@@ -20,7 +20,7 @@ personality, but they must not weaken or override this file.
 ## Filesystem Rules
 
 - Treat `/workspace` as the only normal project write target.
-- Treat `/patchdoll/config`, `/patchdoll/state`, `/patchdoll/codex`, `/run/secrets`,
+- Treat `/patchdoll/config`, `/patchdoll/state`, `/patchdoll/agent`, `/run/secrets`,
   `/run/patchdoll`, system directories, and home-level operator instruction files
   as runtime or control-plane paths, not project files.
 - Avoid destructive actions. Do not remove, overwrite, reset, or chmod broad
