@@ -124,32 +124,56 @@ export class CodexAiProvider implements AiProvider {
 
     const threadKey = patchdollThreadKey(task);
     const store = openCodexThreadStore(stateDbPath, legacyThreadStorePath);
-    const existing = store.get(threadKey);
+    let existing = store.get(threadKey);
     let tempDir: string | undefined;
     const startedAt = Date.now();
 
     try {
       tempDir = await mkdtemp(join(tmpdir(), "patchdoll-codex-"));
       const outputPath = join(tempDir, "last-message.txt");
-      const stdout = await this.invokeCodex({
-        prompt: buildPatchdollPrompt(task, {
-          agentName: "Codex CLI",
+
+      const invoke = (sessionId: string | undefined) =>
+        this.invokeCodex({
+          prompt: buildPatchdollPrompt(task, {
+            agentName: "Codex CLI",
+            threadKey,
+            continuingPriorThread: Boolean(sessionId),
+            settingsExample: '{"codex":{"model":"gpt-5.5","reasoningEffort":"high"}}',
+            supportsExecpolicy: true
+          }),
+          outputPath,
+          codexHome,
+          workdir,
+          model,
+          reasoningEffort,
+          fastMode,
+          bypassSandboxAndApprovals: this.bypassSandboxAndApprovals,
+          env: runtimeEnv,
+          sessionId,
+          progress: task.progress
+        });
+
+      let stdout: string;
+      try {
+        stdout = await invoke(existing?.sessionId);
+      } catch (error) {
+        if (!existing?.sessionId) {
+          throw error;
+        }
+        // A stored session can become unresumable if its rollout file was
+        // pruned or rotated. Left in place, the dead id would re-fail
+        // `exec resume` on every future turn and wedge this thread
+        // permanently. Clear it and retry once as a fresh session so the
+        // thread self-heals.
+        writePatchdollLog("warn", "codex resume failed; clearing session and retrying fresh", {
           threadKey,
-          continuingPriorThread: Boolean(existing),
-          settingsExample: '{"codex":{"model":"gpt-5.5","reasoningEffort":"high"}}',
-          supportsExecpolicy: true
-        }),
-        outputPath,
-        codexHome,
-        workdir,
-        model,
-        reasoningEffort,
-        fastMode,
-        bypassSandboxAndApprovals: this.bypassSandboxAndApprovals,
-        env: runtimeEnv,
-        sessionId: existing?.sessionId,
-        progress: task.progress
-      });
+          error: messageOf(error)
+        });
+        store.delete(threadKey);
+        existing = undefined;
+        stdout = await invoke(undefined);
+      }
+
       const finalMessage = await readFinalMessage(outputPath, stdout);
       const extracted = extractProposedActionsFromMessage(finalMessage);
       const reply = extracted.reply || "Codex completed without a final message.";
@@ -838,6 +862,10 @@ function appendTail(current: string, chunk: string): string {
 function tailForError(value: string): string {
   const trimmed = value.trim();
   return trimmed.length > 4000 ? trimmed.slice(-4000) : trimmed;
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function jsonString(value: JsonValue | undefined): string | undefined {

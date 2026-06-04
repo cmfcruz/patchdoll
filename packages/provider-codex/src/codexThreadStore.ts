@@ -61,6 +61,24 @@ export class CodexThreadStore {
     }
   }
 
+  delete(threadKey: string): void {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db
+        .prepare(
+          `DELETE FROM provider_threads WHERE provider = ? AND thread_key = ?`
+        )
+        .run(PROVIDER, threadKey);
+      this.db
+        .prepare(`DELETE FROM codex_threads WHERE thread_key = ?`)
+        .run(threadKey);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
   close(): void {
     this.db.close();
   }

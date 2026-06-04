@@ -105,21 +105,42 @@ export class ClaudeAiProvider implements AiProvider {
     let existing;
     try {
       existing = store.get(threadKey);
-      result = await this.invokeClaude({
-        prompt: buildPatchdollPrompt(task, {
-          agentName: "Claude Code",
+
+      const invoke = (sessionId: string | undefined) =>
+        this.invokeClaude({
+          prompt: buildPatchdollPrompt(task, {
+            agentName: "Claude Code",
+            threadKey,
+            continuingPriorThread: Boolean(sessionId),
+            settingsExample: '{"claude":{"model":"opus","effort":"high"}}'
+          }),
+          workdir: PATCHDOLL_WORKDIR,
+          model,
+          effort,
+          permissionMode,
+          maxTurns,
+          runtimeEnv,
+          sessionId
+        });
+
+      try {
+        result = await invoke(existing?.sessionId);
+      } catch (error) {
+        if (!existing?.sessionId) {
+          throw error;
+        }
+        // A stored session can become unresumable if its transcript was pruned
+        // or rotated. Left in place, the dead id would re-fail `--resume` on
+        // every future turn and wedge this thread permanently. Clear it and
+        // retry once as a fresh session so the thread self-heals.
+        writePatchdollLog("warn", "claude resume failed; clearing session and retrying fresh", {
           threadKey,
-          continuingPriorThread: Boolean(existing),
-          settingsExample: '{"claude":{"model":"opus","effort":"high"}}'
-        }),
-        workdir: PATCHDOLL_WORKDIR,
-        model,
-        effort,
-        permissionMode,
-        maxTurns,
-        runtimeEnv,
-        sessionId: existing?.sessionId
-      });
+          error: messageOf(error)
+        });
+        store.delete(threadKey);
+        existing = undefined;
+        result = await invoke(undefined);
+      }
 
       // Resuming a session returns its (possibly forked) id; persist whatever
       // the latest run reported so the next turn resumes from the newest point.
