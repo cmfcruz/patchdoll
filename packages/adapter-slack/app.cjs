@@ -576,14 +576,101 @@ async function fetchSlackThreadContext(client, input) {
       messages
     };
   } catch (error) {
+    const diagnostic = slackThreadFetchDiagnostic(error);
+    app.logger.warn({
+      message: "slack thread transcript fetch failed",
+      method: "conversations.replies",
+      slackErrorCode: diagnostic.errorCode,
+      reason: diagnostic.reason,
+      channelId: redactSlackIdentifier(channelId),
+      threadTs: redactSlackIdentifier(threadTs),
+      requestTs: redactSlackIdentifier(input.requestTs),
+      retryCount: 0,
+      botChannelAccess: diagnostic.botChannelAccess
+    });
+
     return {
       available: false,
       channelId,
       threadTs,
-      reason: "slack_api_error",
-      error: messageOf(error).slice(0, 500)
+      reason: diagnostic.reason,
+      error: diagnostic.safeError
     };
   }
+}
+
+function slackThreadFetchDiagnostic(error) {
+  const errorCode = slackApiErrorCode(error);
+  const reason = slackThreadFailureReason(error, errorCode);
+  return {
+    errorCode,
+    reason,
+    botChannelAccess: reason === "slack_channel_not_accessible"
+      ? "denied_or_not_joined"
+      : "unknown",
+    safeError: errorCode
+      ? `${errorCode}: ${messageOf(error).slice(0, 500)}`
+      : messageOf(error).slice(0, 500)
+  };
+}
+
+function slackThreadFailureReason(error, errorCode) {
+  if (
+    errorCode === "ratelimited" ||
+    error && error.code === "slack_webapi_rate_limited_error" ||
+    error && error.statusCode === 429
+  ) {
+    return "slack_rate_limited";
+  }
+
+  if (errorCode === "missing_scope") {
+    return "slack_missing_scope";
+  }
+
+  if (
+    errorCode === "not_in_channel" ||
+    errorCode === "channel_not_found" ||
+    errorCode === "no_permission"
+  ) {
+    return "slack_channel_not_accessible";
+  }
+
+  if (
+    errorCode === "invalid_auth" ||
+    errorCode === "not_authed" ||
+    errorCode === "token_revoked" ||
+    errorCode === "account_inactive"
+  ) {
+    return "slack_auth_error";
+  }
+
+  if (
+    errorCode === "internal_error" ||
+    errorCode === "fatal_error" ||
+    errorCode === "service_unavailable" ||
+    errorCode === "request_timeout" ||
+    ["ETIMEDOUT", "ECONNRESET", "ECONNREFUSED", "EAI_AGAIN"].includes(error && error.code)
+  ) {
+    return "slack_transient_error";
+  }
+
+  return errorCode ? `slack_api_error:${errorCode}` : "slack_api_error:unknown";
+}
+
+function slackApiErrorCode(error) {
+  const dataError = error && error.data && error.data.error;
+  if (typeof dataError === "string" && dataError.trim()) {
+    return dataError.trim();
+  }
+
+  const code = error && error.code;
+  return typeof code === "string" && code.trim() ? code.trim() : undefined;
+}
+
+function redactSlackIdentifier(value) {
+  const text = String(value || "");
+  if (!text) return undefined;
+  return text.length <= 6 ? "[redacted]" : `${text.slice(0, 2)}...${text.slice(-4)}`;
 }
 
 function formatSlackThreadMessage(message) {
