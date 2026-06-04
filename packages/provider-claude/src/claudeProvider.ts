@@ -25,6 +25,7 @@ import {
 } from "@patchdoll/core/settings";
 
 const CLAUDE_HOME = "/patchdoll/agent";
+const MODEL_INSTRUCTIONS_FILE = "/etc/agent/AGENTS.md";
 const STATE_DIR = "/patchdoll/state";
 const PATCHDOLL_WORKDIR = "/workspace";
 const MAX_CAPTURED_OUTPUT_BYTES = 256000;
@@ -41,6 +42,7 @@ const MAX_LOG_VALUE_LENGTH = 4000;
 const PATCHDOLL_LOG_LEVEL = parseLogLevel(process.env.PATCHDOLL_LOG_LEVEL);
 
 interface ClaudeInvocation {
+  instructionsFile: string;
   prompt: string;
   workdir: string;
   model: string;
@@ -140,6 +142,7 @@ export class ClaudeAiProvider implements AiProvider {
 
       const invoke = (sessionId: string | undefined) =>
         this.invokeClaude({
+          instructionsFile: MODEL_INSTRUCTIONS_FILE,
           prompt: buildPatchdollPrompt(task, {
             agentName: "Claude Code",
             threadKey,
@@ -359,6 +362,8 @@ export class ClaudeAiProvider implements AiProvider {
 
 function claudeArgs(invocation: ClaudeInvocation): string[] {
   const args = [
+    "--append-system-prompt-file",
+    invocation.instructionsFile, 
     "-p",
     invocation.prompt,
     "--output-format",

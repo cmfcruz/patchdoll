@@ -10,14 +10,14 @@ socket_dir="$(dirname "$socket_path")"
 codex_home="/patchdoll/agent"
 state_dir="/patchdoll/state"
 workspace_dir="/workspace"
-operator_agents="/etc/codex/AGENTS.md"
+operator_agents="/etc/agent/AGENTS.md"
 
 mkdir -p /run/patchdoll "$socket_dir" "$codex_home" "$state_dir" "$workspace_dir"
 chown patchdoll:patchdoll-ipc /run/patchdoll
 chmod 2770 /run/patchdoll
-if [ -d /etc/codex/skills ]; then
+if [ -d /etc/agent/skills ]; then
   mkdir -p "$codex_home/skills"
-  cp -Rn /etc/codex/skills/. "$codex_home/skills/"
+  cp -Rn /etc/agent/skills/. "$codex_home/skills/"
 fi
 
 if [ ! -r "$operator_agents" ]; then
