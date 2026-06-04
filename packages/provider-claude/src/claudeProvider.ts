@@ -131,10 +131,26 @@ export class ClaudeAiProvider implements AiProvider {
         // other failure (timeout, auth, CLI startup, or a real agent failure
         // after resume already succeeded) must propagate untouched — clearing
         // the session there would discard valid context and duplicate work.
-        const resume = existing?.sessionId
+        const hadSession = Boolean(existing?.sessionId);
+        const resume = hadSession
           ? isClaudeResumeFailure(error)
           : { matched: false };
         if (!resume.matched) {
+          // Observability: a stored session failed with wording we don't
+          // recognize as a resume failure. We leave it intact rather than guess
+          // and delete valid context, but surface it — this is the sample we
+          // need to tune the signature lists, and it explains a wedged thread.
+          if (hadSession) {
+            writePatchdollLog(
+              "warn",
+              "claude invocation failed with a stored session but no resume signature matched; leaving session intact",
+              {
+                threadKey,
+                sessionId: existing?.sessionId,
+                error: messageOf(error)
+              }
+            );
+          }
           throw error;
         }
         // A stored session can become unresumable if its transcript was pruned

@@ -154,6 +154,25 @@ export class CodexAiProvider implements AiProvider {
           progress: task.progress
         });
 
+      // Preflight: if we have a stored session but its rollout file is gone
+      // (home purged / pruned / rotated), don't even attempt `exec resume`.
+      // Resuming would fail with wording we might not recognize and leave the
+      // thread wedged. This existence check is deterministic and independent of
+      // CLI error strings — the resume-failure matcher below remains as a
+      // backstop for a rollout that is present but unreadable.
+      if (
+        existing?.sessionId &&
+        !(await rolloutExistsForSession(codexHome, existing.sessionId))
+      ) {
+        writePatchdollLog(
+          "warn",
+          "codex stored session has no rollout file; clearing and starting fresh",
+          { threadKey, sessionId: existing.sessionId }
+        );
+        store.delete(threadKey);
+        existing = undefined;
+      }
+
       let stdout: string;
       try {
         stdout = await invoke(existing?.sessionId);
@@ -162,10 +181,27 @@ export class CodexAiProvider implements AiProvider {
         // other failure (timeout, auth, CLI startup, or a real agent failure
         // after resume already succeeded) must propagate untouched — clearing
         // the session there would discard valid context and duplicate work.
-        const resume = existing?.sessionId
+        const hadSession = Boolean(existing?.sessionId);
+        const resume = hadSession
           ? isCodexResumeFailure(error)
           : { matched: false };
         if (!resume.matched) {
+          // Observability: a stored session failed with wording we don't
+          // recognize as a resume failure. We deliberately leave it intact
+          // (rather than guess and delete valid context), but this is exactly
+          // the sample needed to tune the signature lists — and it explains a
+          // thread that stays wedged. Surface it rather than swallowing it.
+          if (hadSession) {
+            writePatchdollLog(
+              "warn",
+              "codex invocation failed with a stored session but no resume signature matched; leaving session intact",
+              {
+                threadKey,
+                sessionId: existing?.sessionId,
+                error: messageOf(error)
+              }
+            );
+          }
           throw error;
         }
         // A stored session can become unresumable if its rollout file was
@@ -669,6 +705,30 @@ function codexArgs(invocation: CodexInvocation): string[] {
 
   args.push("-");
   return args;
+}
+
+/**
+ * True when a rollout file for `sessionId` still exists under
+ * `<codexHome>/sessions`. Codex names rollout files with the session UUID, so a
+ * filename scan is a fast, deterministic existence check that does not depend on
+ * CLI error wording. A rollout that is present but unreadable is intentionally
+ * NOT handled here — the resume-failure matcher backstops that case.
+ */
+export async function rolloutExistsForSession(
+  codexHome: string,
+  sessionId: string
+): Promise<boolean> {
+  const needle = sessionId.toLowerCase();
+  if (!needle) {
+    return false;
+  }
+  const files = await listJsonlFiles(join(codexHome, "sessions"));
+  for (const path of files) {
+    if (basename(path).toLowerCase().includes(needle)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 async function newestSessionId(
