@@ -16,9 +16,13 @@ type(scope): subject
 ```
 
 - `type` is required and lowercase.
-- `scope` is optional; use a package, module, workflow, or area name such as `slack`, `github`, `docker`, `codex`, `claude`, `skills`, or `settings`.
+- `scope` is optional; use a package, module, workflow, or area name.
+- Prefer actual package scopes for package-specific work: `adapter-slack`, `core`, `provider-claude`, or `provider-codex`.
+- Use repository area scopes for cross-cutting work, such as `docker`, `skills`, `ci`, `github`, or `settings`.
 - `subject` is required, imperative, concise, lowercase unless a proper noun is needed, and has no trailing period.
+- Keep subjects near 50 characters when practical; treat 72 characters as the hard maximum.
 - Add a body after a blank line when the why/context matters.
+- Wrap body paragraphs at about 72 columns.
 - Add footers after another blank line for issue links, breaking changes, or metadata.
 
 ## Choose the type
@@ -37,8 +41,17 @@ Prefer the most specific truthful type:
 | `ci` | CI/CD workflow changes | Usually no version bump |
 | `chore` | Maintenance with no product behavior | Usually no version bump |
 | `style` | Formatting-only changes | Usually no version bump |
+| `revert` | Revert a previous commit | Release Please treats specially and drops the reverted entry |
 
 Do not hide user-visible changes behind `chore`; Release Please can only work with the signal it receives.
+
+Use the canonical revert body shape when reverting a single commit:
+
+```text
+revert: feat(settings): add Claude provider selection
+
+This reverts commit <hash>.
+```
 
 ## Breaking changes
 
@@ -51,6 +64,17 @@ BREAKING CHANGE: Unsigned webhook requests are now rejected before routing.
 ```
 
 Use breaking-change markers only when callers, users, operators, config, APIs, data formats, or deployment assumptions must change.
+
+## Footers and trailers
+
+Put footers in a footer block after a blank line. Keep GitHub issue links and
+git trailers parseable and intentional.
+
+- Use `Closes #N` or `Fixes #N` only when merging the commit or PR should close the issue.
+- Use `Refs: #N` when the work is related but should not auto-close the issue.
+- Use `BREAKING CHANGE: ...` for breaking-change details.
+- Use `Co-authored-by: Name <email>` for co-author trailers.
+- Put each footer or trailer on its own line.
 
 ## Examples
 
@@ -75,6 +99,8 @@ Write Slack-originated commit messages through a temp file so agents do not
 accidentally pass literal \n sequences to git.
 
 Refs: #12
+
+Co-authored-by: Patchdoll <patchdoll@example.invalid>
 ```
 
 Invalid examples:
@@ -96,6 +122,8 @@ When squash merge uses the PR title as the commit subject, draft the PR title as
 - Use `feat(...)` or `fix(...)` for user-visible changes.
 - Use `docs(...)`, `test(...)`, `ci(...)`, `build(...)`, or `chore(...)` for non-release-impacting work.
 - Keep PR bodies human-readable; only the title needs to be a valid commit header unless the repository requires more.
+- On squash merge, only the PR title is preserved as the commit subject Release Please reads; intermediate branch commit types are discarded.
+- If a branch contains a buried `feat` or `fix`, make sure the squash-merge PR title carries that same release signal.
 - Inspect commits before asking for merge if the branch contains multiple commits.
 - Use authenticated `gh` CLI for GitHub actions and metadata.
 - For `cmfcruz` or `patchdoll` repositories, add `cmfcruz` as reviewer unless the user says otherwise.
@@ -113,3 +141,7 @@ When preparing a commit:
 ## Release Please note
 
 Release Please reads Conventional Commits to decide changelog entries and version bumps. In normal Patchdoll work, do not create special Release Please wording. Instead, choose the correct Conventional Commit type, scope, and breaking-change marker. Only ask for trusted user guidance when release automation requires unusual handling.
+
+If Release Please config, a release workflow, or PR title validation are not
+present in the repository yet, this skill is advisory rather than mechanically
+enforced. Follow it anyway so history is ready when automation catches up.
