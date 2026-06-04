@@ -1,4 +1,0 @@
-interface:
-  display_name: "Conventional Commits"
-  short_description: "Write release-ready commit messages and PR titles."
-  default_prompt: "Use Conventional Commits for this commit message or PR title."

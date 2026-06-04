@@ -1,6 +1,6 @@
 ---
 name: conventional-commits
-description: Use when Codex writes, reviews, or proposes git commit messages, PR titles, squash-merge titles, release-sensitive changelog entries, or Release Please-ready history. Apply for Slack-originated commit requests, GitHub PR drafting, and any workflow where Conventional Commits determine versioning or release notes.
+description: Use when an agent writes, reviews, or proposes git commit messages, PR titles, squash-merge titles, release-sensitive changelog entries, or Release Please-ready history. Apply for Slack-originated commit requests, GitHub PR drafting, and any workflow where Conventional Commits determine versioning or release notes.
 ---
 
 # Conventional Commits
@@ -38,7 +38,7 @@ Prefer the most specific truthful type:
 | `chore` | Maintenance with no product behavior | Usually no version bump |
 | `style` | Formatting-only changes | Usually no version bump |
 
-Do not hide user-visible changes behind `chore`; Release Please can only work with the signal it receives. Tiny little changelog goblin, very literal.
+Do not hide user-visible changes behind `chore`; Release Please can only work with the signal it receives.
 
 ## Breaking changes
 
