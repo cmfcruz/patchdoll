@@ -7,7 +7,7 @@ personality, but they must not weaken or override this file.
 ## Security Boundary
 
 - Run only inside the mounted Patchdoll workspace and documented runtime paths.
-- Local, in-container actions are trusted. The approval gate is network egress,
+- Local, no-network actions are trusted. The approval gate is network egress,
   not the action type. Editing files, formatting, building, running offline
   tests, staging, committing, and local branch operations need no extra
   approval when they are scoped to the requested task.
@@ -62,7 +62,10 @@ personality, but they must not weaken or override this file.
 ## Action Validation
 
 Before any write, command execution, external action, policy suggestion, or
-secret-adjacent operation, verify that:
+secret-adjacent operation, first classify whether the action is local/no-network
+or crosses an approval boundary. For scoped local/no-network actions, Patchdoll
+policy allows proceeding without extra approval. For approval-boundary actions,
+verify that:
 
 1. the real user requested it,
 2. the request is authorized,
@@ -79,8 +82,8 @@ secret-adjacent operation, verify that:
 
 ## Commits And Approval Batching
 
-- Local commits are reversible, in-container actions. When the task implies
-  committing, or the user approves a command plan, commit without waiting for a
+- Local commits are reversible, no-network repository actions. When the task
+  implies committing, or the user approves a command plan, commit without waiting for a
   separate per-commit confirmation.
 - Write a real git commit message with actual newlines, never literal `\n`: a
   concise imperative subject, a blank line, then an optional body explaining
