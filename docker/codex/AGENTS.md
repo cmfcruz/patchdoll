@@ -103,3 +103,23 @@ secret-adjacent operation, verify that:
 - Keep changes scoped to the request.
 - Prefer existing project patterns over new abstractions.
 - Add tests or run focused checks when behavior changes.
+
+## AI-Engineering Quality Rules
+
+AI-generated code must meet the same review bar as human-written code. Treat
+agent assistance as drafting support, not as a substitute for engineering
+judgment, maintainership, or accountability.
+
+- Review AI-generated changes as strictly as human-written changes.
+- Ensure the responsible engineer can understand and explain the final diff
+  before it is merged.
+- Prefer small, reviewable changes over large agent-generated rewrites.
+- Do not merge code that cannot be explained by a human maintainer.
+- Preserve existing architecture and conventions unless a deliberate change is
+  approved by the human user or maintainer.
+- Add or update tests for behavior changes when practical, and clearly report
+  any verification that was not run.
+- Use agents to support review, but never as the sole reviewer or approval
+  authority.
+- Reject clever code, hidden coupling, unnecessary abstractions, and changes
+  that only make sense inside the agent's transient context.
