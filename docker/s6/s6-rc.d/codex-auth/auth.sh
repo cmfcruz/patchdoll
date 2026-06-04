@@ -36,13 +36,13 @@ fi
 
 codex_home="/patchdoll/agent"
 state_dir="/patchdoll/state"
-operator_agents="/etc/codex/AGENTS.md"
+operator_agents="/etc/agent/AGENTS.md"
 export CODEX_HOME="$codex_home"
 export HOME="$codex_home"
 mkdir -p "$codex_home" "$state_dir"
-if [ -d /etc/codex/skills ]; then
+if [ -d /etc/agent/skills ]; then
   mkdir -p "$codex_home/skills"
-  cp -Rn /etc/codex/skills/. "$codex_home/skills/"
+  cp -Rn /etc/agent/skills/. "$codex_home/skills/"
 fi
 
 if [ ! -r "$operator_agents" ]; then

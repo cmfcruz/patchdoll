@@ -22,9 +22,9 @@ chmod 2770 /run/patchdoll
 chown agent:patchdoll-ipc "$socket_dir" "$claude_home"
 chmod 2770 "$socket_dir"
 chmod 0770 "$claude_home"
-if [ -d /etc/claude/skills ]; then
+if [ -d /etc/agent/skills ]; then
   mkdir -p "$claude_home/skills"
-  cp -Rn /etc/claude/skills/. "$claude_home/skills/"
+  cp -Rn /etc/agent/skills/. "$claude_home/skills/"
   chown -R agent:patchdoll-ipc "$claude_home/skills"
 fi
 chown -R agent:patchdoll-ipc "$state_dir"
