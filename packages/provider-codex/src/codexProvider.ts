@@ -20,8 +20,12 @@ import type {
 } from "@patchdoll/core";
 import {
   buildPatchdollPrompt,
+  buildResetThreadResult,
   extractProposedActionsFromMessage,
+  isCodexResumeFailure,
+  isResetThreadCommand,
   patchdollThreadKey,
+  RESET_THREAD_HINT,
   stringifyLogJson
 } from "@patchdoll/core";
 import {
@@ -124,32 +128,132 @@ export class CodexAiProvider implements AiProvider {
 
     const threadKey = patchdollThreadKey(task);
     const store = openCodexThreadStore(stateDbPath, legacyThreadStorePath);
-    const existing = store.get(threadKey);
+
+    // Explicit human escape hatch: `reset thread` clears the stored session
+    // without invoking the CLI. Admin-only so a stray message can't drop a
+    // valid session's context.
+    if (isResetThreadCommand(task.event.body)) {
+      try {
+        const actorIsAdmin = task.config.actorIsAdmin;
+        let cleared = false;
+        if (actorIsAdmin) {
+          cleared = Boolean(store.get(threadKey)?.sessionId);
+          store.delete(threadKey);
+        }
+        writePatchdollLog("info", "codex reset-thread command", {
+          threadKey,
+          actorIsAdmin,
+          cleared
+        });
+        return buildResetThreadResult({
+          provider: "codex",
+          threadKey,
+          actorIsAdmin,
+          cleared
+        });
+      } finally {
+        store.close();
+      }
+    }
+
+    let existing = store.get(threadKey);
     let tempDir: string | undefined;
     const startedAt = Date.now();
 
     try {
       tempDir = await mkdtemp(join(tmpdir(), "patchdoll-codex-"));
       const outputPath = join(tempDir, "last-message.txt");
-      const stdout = await this.invokeCodex({
-        prompt: buildPatchdollPrompt(task, {
-          agentName: "Codex CLI",
+
+      const invoke = (sessionId: string | undefined) =>
+        this.invokeCodex({
+          prompt: buildPatchdollPrompt(task, {
+            agentName: "Codex CLI",
+            threadKey,
+            continuingPriorThread: Boolean(sessionId),
+            settingsExample: '{"codex":{"model":"gpt-5.5","reasoningEffort":"high"}}',
+            supportsExecpolicy: true
+          }),
+          outputPath,
+          codexHome,
+          workdir,
+          model,
+          reasoningEffort,
+          fastMode,
+          bypassSandboxAndApprovals: this.bypassSandboxAndApprovals,
+          env: runtimeEnv,
+          sessionId,
+          progress: task.progress
+        });
+
+      // Preflight: if we have a stored session but its rollout file is gone
+      // (home purged / pruned / rotated), don't even attempt `exec resume`.
+      // Resuming would fail with wording we might not recognize and leave the
+      // thread wedged. This existence check is deterministic and independent of
+      // CLI error strings — the resume-failure matcher below remains as a
+      // backstop for a rollout that is present but unreadable.
+      if (
+        existing?.sessionId &&
+        !(await rolloutExistsForSession(codexHome, existing.sessionId))
+      ) {
+        writePatchdollLog(
+          "warn",
+          "codex stored session has no rollout file; clearing and starting fresh",
+          { threadKey, sessionId: existing.sessionId }
+        );
+        store.delete(threadKey);
+        existing = undefined;
+      }
+
+      let stdout: string;
+      try {
+        stdout = await invoke(existing?.sessionId);
+      } catch (error) {
+        // Only self-heal when the stored session itself failed to resume. Any
+        // other failure (timeout, auth, CLI startup, or a real agent failure
+        // after resume already succeeded) must propagate untouched — clearing
+        // the session there would discard valid context and duplicate work.
+        const hadSession = Boolean(existing?.sessionId);
+        const resume = hadSession
+          ? isCodexResumeFailure(error)
+          : { matched: false };
+        if (!resume.matched) {
+          // Observability: a stored session failed with wording we don't
+          // recognize as a resume failure. We deliberately leave it intact
+          // (rather than guess and delete valid context), but this is exactly
+          // the sample needed to tune the signature lists — and it explains a
+          // thread that stays wedged. Surface it rather than swallowing it.
+          if (hadSession) {
+            writePatchdollLog(
+              "warn",
+              "codex invocation failed with a stored session but no resume signature matched; leaving session intact",
+              {
+                threadKey,
+                sessionId: existing?.sessionId,
+                error: messageOf(error)
+              }
+            );
+            // Surface the escape hatch: we kept the session (right call), but if
+            // it's actually a dead-session failure we don't recognize, an admin
+            // can recover with `reset thread`.
+            throw new Error(`${messageOf(error)}\n\n${RESET_THREAD_HINT}`);
+          }
+          throw error;
+        }
+        // A stored session can become unresumable if its rollout file was
+        // pruned or rotated. Left in place, the dead id would re-fail
+        // `exec resume` on every future turn and wedge this thread
+        // permanently. Clear it and retry once as a fresh session so the
+        // thread self-heals.
+        writePatchdollLog("warn", "codex resume failed; clearing session and retrying fresh", {
           threadKey,
-          continuingPriorThread: Boolean(existing),
-          settingsExample: '{"codex":{"model":"gpt-5.5","reasoningEffort":"high"}}',
-          supportsExecpolicy: true
-        }),
-        outputPath,
-        codexHome,
-        workdir,
-        model,
-        reasoningEffort,
-        fastMode,
-        bypassSandboxAndApprovals: this.bypassSandboxAndApprovals,
-        env: runtimeEnv,
-        sessionId: existing?.sessionId,
-        progress: task.progress
-      });
+          signature: resume.signature,
+          error: messageOf(error)
+        });
+        store.delete(threadKey);
+        existing = undefined;
+        stdout = await invoke(undefined);
+      }
+
       const finalMessage = await readFinalMessage(outputPath, stdout);
       const extracted = extractProposedActionsFromMessage(finalMessage);
       const reply = extracted.reply || "Codex completed without a final message.";
@@ -638,6 +742,30 @@ function codexArgs(invocation: CodexInvocation): string[] {
   return args;
 }
 
+/**
+ * True when a rollout file for `sessionId` still exists under
+ * `<codexHome>/sessions`. Codex names rollout files with the session UUID, so a
+ * filename scan is a fast, deterministic existence check that does not depend on
+ * CLI error wording. A rollout that is present but unreadable is intentionally
+ * NOT handled here — the resume-failure matcher backstops that case.
+ */
+export async function rolloutExistsForSession(
+  codexHome: string,
+  sessionId: string
+): Promise<boolean> {
+  const needle = sessionId.toLowerCase();
+  if (!needle) {
+    return false;
+  }
+  const files = await listJsonlFiles(join(codexHome, "sessions"));
+  for (const path of files) {
+    if (basename(path).toLowerCase().includes(needle)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 async function newestSessionId(
   codexHome: string,
   startedAt: number
@@ -838,6 +966,10 @@ function appendTail(current: string, chunk: string): string {
 function tailForError(value: string): string {
   const trimmed = value.trim();
   return trimmed.length > 4000 ? trimmed.slice(-4000) : trimmed;
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function jsonString(value: JsonValue | undefined): string | undefined {

@@ -78,6 +78,14 @@ export class ClaudeThreadStore {
     }
   }
 
+  delete(threadKey: string): void {
+    this.db
+      .prepare(
+        `DELETE FROM provider_threads WHERE provider = ? AND thread_key = ?`
+      )
+      .run(PROVIDER, threadKey);
+  }
+
   close(): void {
     this.db.close();
   }

@@ -10,8 +10,12 @@ import type {
 } from "@patchdoll/core";
 import {
   buildPatchdollPrompt,
+  buildResetThreadResult,
   extractProposedActionsFromMessage,
+  isClaudeResumeFailure,
+  isResetThreadCommand,
   patchdollThreadKey,
+  RESET_THREAD_HINT,
   stringifyLogJson
 } from "@patchdoll/core";
 import {
@@ -99,27 +103,104 @@ export class ClaudeAiProvider implements AiProvider {
     const threadKey = patchdollThreadKey(task);
     const stateDbPath = join(this.stateDir, "patchdoll.sqlite");
     const store = openClaudeThreadStore(stateDbPath);
+
+    // Explicit human escape hatch: `reset thread` clears the stored session
+    // without invoking the CLI. Admin-only so a stray message can't drop a
+    // valid session's context.
+    if (isResetThreadCommand(task.event.body)) {
+      try {
+        const actorIsAdmin = task.config.actorIsAdmin;
+        let cleared = false;
+        if (actorIsAdmin) {
+          cleared = Boolean(store.get(threadKey)?.sessionId);
+          store.delete(threadKey);
+        }
+        writePatchdollLog("info", "claude reset-thread command", {
+          threadKey,
+          actorIsAdmin,
+          cleared
+        });
+        return buildResetThreadResult({
+          provider: "claude",
+          threadKey,
+          actorIsAdmin,
+          cleared
+        });
+      } finally {
+        store.close();
+      }
+    }
+
     const startedAt = new Date();
 
     let result: ClaudeJsonResult;
     let existing;
     try {
       existing = store.get(threadKey);
-      result = await this.invokeClaude({
-        prompt: buildPatchdollPrompt(task, {
-          agentName: "Claude Code",
+
+      const invoke = (sessionId: string | undefined) =>
+        this.invokeClaude({
+          prompt: buildPatchdollPrompt(task, {
+            agentName: "Claude Code",
+            threadKey,
+            continuingPriorThread: Boolean(sessionId),
+            settingsExample: '{"claude":{"model":"opus","effort":"high"}}'
+          }),
+          workdir: PATCHDOLL_WORKDIR,
+          model,
+          effort,
+          permissionMode,
+          maxTurns,
+          runtimeEnv,
+          sessionId
+        });
+
+      try {
+        result = await invoke(existing?.sessionId);
+      } catch (error) {
+        // Only self-heal when the stored session itself failed to resume. Any
+        // other failure (timeout, auth, CLI startup, or a real agent failure
+        // after resume already succeeded) must propagate untouched — clearing
+        // the session there would discard valid context and duplicate work.
+        const hadSession = Boolean(existing?.sessionId);
+        const resume = hadSession
+          ? isClaudeResumeFailure(error)
+          : { matched: false };
+        if (!resume.matched) {
+          // Observability: a stored session failed with wording we don't
+          // recognize as a resume failure. We leave it intact rather than guess
+          // and delete valid context, but surface it — this is the sample we
+          // need to tune the signature lists, and it explains a wedged thread.
+          if (hadSession) {
+            writePatchdollLog(
+              "warn",
+              "claude invocation failed with a stored session but no resume signature matched; leaving session intact",
+              {
+                threadKey,
+                sessionId: existing?.sessionId,
+                error: messageOf(error)
+              }
+            );
+            // Surface the escape hatch: we kept the session (right call), but if
+            // it's actually a dead-session failure we don't recognize, an admin
+            // can recover with `reset thread`.
+            throw new Error(`${messageOf(error)}\n\n${RESET_THREAD_HINT}`);
+          }
+          throw error;
+        }
+        // A stored session can become unresumable if its transcript was pruned
+        // or rotated. Left in place, the dead id would re-fail `--resume` on
+        // every future turn and wedge this thread permanently. Clear it and
+        // retry once as a fresh session so the thread self-heals.
+        writePatchdollLog("warn", "claude resume failed; clearing session and retrying fresh", {
           threadKey,
-          continuingPriorThread: Boolean(existing),
-          settingsExample: '{"claude":{"model":"opus","effort":"high"}}'
-        }),
-        workdir: PATCHDOLL_WORKDIR,
-        model,
-        effort,
-        permissionMode,
-        maxTurns,
-        runtimeEnv,
-        sessionId: existing?.sessionId
-      });
+          signature: resume.signature,
+          error: messageOf(error)
+        });
+        store.delete(threadKey);
+        existing = undefined;
+        result = await invoke(undefined);
+      }
 
       // Resuming a session returns its (possibly forked) id; persist whatever
       // the latest run reported so the next turn resumes from the newest point.

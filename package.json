@@ -11,6 +11,7 @@
     "build": "tsc -b",
     "start": "node packages/core/dist/server.js",
     "check": "tsc -b",
+    "test": "tsc -b && node --test \"packages/*/test/*.test.ts\"",
     "patchdoll:build": "docker build -t patchdoll:latest .",
     "patchdoll:stop": "docker stop --timeout 15 patchdoll"
   },

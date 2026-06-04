@@ -174,3 +174,22 @@ settings from Slack:
 
 Secrets do not belong in settings. Keep Slack tokens, API keys, cookies, private
 keys, and credentials in `/run/secrets/patchdoll.env`.
+
+## Optional: Reset a thread's session
+
+Patchdoll remembers a CLI session per thread and resumes it on each new message.
+If a thread ever gets stuck (for example, a resume keeps failing), an **admin**
+can clear the saved session so the next message starts a fresh conversation.
+
+Mention or DM Patchdoll with one of:
+
+```text
+reset thread
+reset this thread
+start fresh
+```
+
+This is admin-only (same `PATCHDOLL_ADMINS` list as settings changes) and only
+clears the stored session for that one thread — it does not delete any messages.
+Non-admins are told to ask an admin. Patchdoll also suggests this command on its
+own when an invocation fails in a way that looks like a dead session.
