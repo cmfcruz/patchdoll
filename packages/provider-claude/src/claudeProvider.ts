@@ -10,9 +10,12 @@ import type {
 } from "@patchdoll/core";
 import {
   buildPatchdollPrompt,
+  buildResetThreadResult,
   extractProposedActionsFromMessage,
   isClaudeResumeFailure,
+  isResetThreadCommand,
   patchdollThreadKey,
+  RESET_THREAD_HINT,
   stringifyLogJson
 } from "@patchdoll/core";
 import {
@@ -100,6 +103,34 @@ export class ClaudeAiProvider implements AiProvider {
     const threadKey = patchdollThreadKey(task);
     const stateDbPath = join(this.stateDir, "patchdoll.sqlite");
     const store = openClaudeThreadStore(stateDbPath);
+
+    // Explicit human escape hatch: `reset thread` clears the stored session
+    // without invoking the CLI. Admin-only so a stray message can't drop a
+    // valid session's context.
+    if (isResetThreadCommand(task.event.body)) {
+      try {
+        const actorIsAdmin = task.config.actorIsAdmin;
+        let cleared = false;
+        if (actorIsAdmin) {
+          cleared = Boolean(store.get(threadKey)?.sessionId);
+          store.delete(threadKey);
+        }
+        writePatchdollLog("info", "claude reset-thread command", {
+          threadKey,
+          actorIsAdmin,
+          cleared
+        });
+        return buildResetThreadResult({
+          provider: "claude",
+          threadKey,
+          actorIsAdmin,
+          cleared
+        });
+      } finally {
+        store.close();
+      }
+    }
+
     const startedAt = new Date();
 
     let result: ClaudeJsonResult;
@@ -150,6 +181,10 @@ export class ClaudeAiProvider implements AiProvider {
                 error: messageOf(error)
               }
             );
+            // Surface the escape hatch: we kept the session (right call), but if
+            // it's actually a dead-session failure we don't recognize, an admin
+            // can recover with `reset thread`.
+            throw new Error(`${messageOf(error)}\n\n${RESET_THREAD_HINT}`);
           }
           throw error;
         }

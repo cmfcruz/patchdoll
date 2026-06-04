@@ -20,9 +20,12 @@ import type {
 } from "@patchdoll/core";
 import {
   buildPatchdollPrompt,
+  buildResetThreadResult,
   extractProposedActionsFromMessage,
   isCodexResumeFailure,
+  isResetThreadCommand,
   patchdollThreadKey,
+  RESET_THREAD_HINT,
   stringifyLogJson
 } from "@patchdoll/core";
 import {
@@ -125,6 +128,34 @@ export class CodexAiProvider implements AiProvider {
 
     const threadKey = patchdollThreadKey(task);
     const store = openCodexThreadStore(stateDbPath, legacyThreadStorePath);
+
+    // Explicit human escape hatch: `reset thread` clears the stored session
+    // without invoking the CLI. Admin-only so a stray message can't drop a
+    // valid session's context.
+    if (isResetThreadCommand(task.event.body)) {
+      try {
+        const actorIsAdmin = task.config.actorIsAdmin;
+        let cleared = false;
+        if (actorIsAdmin) {
+          cleared = Boolean(store.get(threadKey)?.sessionId);
+          store.delete(threadKey);
+        }
+        writePatchdollLog("info", "codex reset-thread command", {
+          threadKey,
+          actorIsAdmin,
+          cleared
+        });
+        return buildResetThreadResult({
+          provider: "codex",
+          threadKey,
+          actorIsAdmin,
+          cleared
+        });
+      } finally {
+        store.close();
+      }
+    }
+
     let existing = store.get(threadKey);
     let tempDir: string | undefined;
     const startedAt = Date.now();
@@ -201,6 +232,10 @@ export class CodexAiProvider implements AiProvider {
                 error: messageOf(error)
               }
             );
+            // Surface the escape hatch: we kept the session (right call), but if
+            // it's actually a dead-session failure we don't recognize, an admin
+            // can recover with `reset thread`.
+            throw new Error(`${messageOf(error)}\n\n${RESET_THREAD_HINT}`);
           }
           throw error;
         }
