@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 const TOKEN_FRESHNESS_MS = 30 * 60 * 1000;
 const GITHUB_API_URL = "https://api.github.com";
 const GITHUB_API_VERSION = "2022-11-28";
-const PATCHDOLL_SECRETS_PATH = "/run/secrets/patchdoll.env";
+const PATCHDOLL_SECRETS_PATHS = ["/run/secrets/patchdoll.env", "/run/patchdoll/secrets.env"];
 
 interface GitHubAppConfig {
   appId: string;
@@ -215,14 +215,25 @@ function decodePrivateKey(value: string): string {
 }
 
 async function readPatchdollSecrets(): Promise<Record<string, string>> {
-  try {
-    return parseEnvFile(await readFile(PATCHDOLL_SECRETS_PATH, "utf8"));
-  } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") {
-      return {};
+  const secrets: Record<string, string> = {};
+
+  for (const path of PATCHDOLL_SECRETS_PATHS) {
+    try {
+      Object.assign(secrets, parseEnvFile(await readFile(path, "utf8")));
+    } catch (error) {
+      // Skip paths that are absent or that this process is not permitted to
+      // read. The worker-private stash (/run/patchdoll/secrets.env) is owned
+      // root:0600 and is intentionally unreadable by the patchdoll-group
+      // server process; the shared App credentials live in the group-readable
+      // /run/secrets/patchdoll.env instead.
+      if (isNodeError(error) && (error.code === "ENOENT" || error.code === "EACCES")) {
+        continue;
+      }
+      throw error;
     }
-    throw error;
   }
+
+  return secrets;
 }
 
 function secretValue(

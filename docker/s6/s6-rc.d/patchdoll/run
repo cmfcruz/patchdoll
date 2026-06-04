@@ -1,5 +1,3 @@
 #!/command/execlineb -P
 with-contenv
-cd /workspace
-s6-setuidgid patchdoll
-node /app/packages/core/dist/server.js
+/bin/bash /etc/s6-overlay/s6-rc.d/patchdoll/run.sh

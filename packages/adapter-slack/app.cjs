@@ -2,7 +2,8 @@ const { readFileSync } = require("node:fs");
 const http = require("node:http");
 const { App } = require("@slack/bolt");
 
-const patchdollSecretsPath = "/run/secrets/patchdoll.env";
+const patchdollSecretsPaths = ["/run/secrets/patchdoll.env", "/run/patchdoll/secrets.env"];
+const patchdollSecretsPath = patchdollSecretsPaths.join(" or ");
 const patchdollSocketPath = "/run/patchdoll/core.sock";
 const patchdollPath = "/webhooks/slack";
 const commandName = process.env.PATCHDOLL_SLACK_COMMAND || "/patchdoll";
@@ -635,6 +636,10 @@ function slackMessageUrl(event) {
 }
 
 function requiredSecret(name) {
+  if (process.env[name] && process.env.PATCHDOLL_SECRETS_ENV_ALLOWED === "1") {
+    return process.env[name];
+  }
+
   if (process.env[name]) {
     throw new Error(`${name} must be configured in ${patchdollSecretsPath}`);
   }
@@ -649,7 +654,7 @@ function requiredSecret(name) {
 
 function readSlackSecrets() {
   if (!readSlackSecrets.cache) {
-    readSlackSecrets.cache = readEnvFileIfPresent(patchdollSecretsPath);
+    readSlackSecrets.cache = Object.assign({}, ...patchdollSecretsPaths.map(readEnvFileIfPresent));
   }
   return readSlackSecrets.cache;
 }

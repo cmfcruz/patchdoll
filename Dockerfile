@@ -76,12 +76,12 @@ RUN set -eux; \
   apt-get install -y --no-install-recommends python3-yaml; \
   rm -rf /var/lib/apt/lists/*
 
-COPY docker/codex/skills ./docker/codex/skills
+COPY docker/skills ./docker/skills
 
 RUN python3 -c $'from pathlib import Path\n\
 import yaml\n\
 \n\
-for skill in Path("docker/codex/skills").glob("*/SKILL.md"):\n\
+for skill in Path("docker/skills").glob("*/SKILL.md"):\n\
     text = skill.read_text(encoding="utf-8")\n\
     if not text.startswith("---\\n"):\n\
         raise SystemExit(f"{skill}: missing YAML frontmatter")\n\
@@ -138,20 +138,24 @@ RUN groupmod -n patchdoll node \
   && usermod -l patchdoll -d /home/patchdoll -m node \
   && groupadd --system patchdoll-ipc \
   && groupadd --system codex \
+  && groupadd --system claude \
   && useradd --system --create-home --home-dir /home/codex --gid codex --groups patchdoll-ipc codex \
+  && useradd --system --create-home --home-dir /home/claude --gid claude --groups patchdoll-ipc claude \
   && usermod --append --groups patchdoll-ipc patchdoll \
-  && mkdir -p /app/slack /run/secrets /run/patchdoll/providers /workspace /patchdoll/state /patchdoll/codex /etc/codex \
+  && mkdir -p /app/slack /run/secrets /run/patchdoll/providers /workspace /patchdoll/state /patchdoll/codex /patchdoll/claude /etc/codex \
   && chown -R patchdoll:patchdoll /app \
   && chown root:patchdoll /run/secrets \
   && chmod 0750 /run/secrets \
   && chown patchdoll:patchdoll-ipc /run/patchdoll \
   && chmod 2770 /run/patchdoll \
   && chown -R codex:patchdoll-ipc /run/patchdoll/providers /patchdoll/codex \
+  && chown -R claude:patchdoll-ipc /patchdoll/claude \
   && chown -R codex:patchdoll-ipc /workspace \
   && chown root:root /etc/codex \
   && chmod 0555 /etc/codex \
   && chmod 2770 /run/patchdoll/providers \
   && chmod 0770 /patchdoll/codex \
+  && chmod 0770 /patchdoll/claude \
   && chmod 2770 /workspace \
   && chown -R codex:patchdoll-ipc /patchdoll/state \
   && chmod 2770 /patchdoll/state
@@ -162,22 +166,42 @@ COPY --from=build --chown=patchdoll:patchdoll /app/packages /app/packages
 COPY --from=validation /validation-ok /tmp/patchdoll-validation-ok
 COPY --from=peercred --chown=root:root /patchdoll-peercred /usr/local/bin/patchdoll-peercred
 COPY --chown=root:root docker/codex/AGENTS.md /etc/codex/AGENTS.md
-COPY --chown=root:root docker/codex/skills /etc/codex/skills
+COPY --chown=root:root docker/skills /etc/codex/skills
+COPY --chown=root:root docker/skills /etc/claude/skills
+COPY --chown=root:root docker/cont-init.d/ /etc/cont-init.d/
+COPY --chown=root:root docker/s6/scripts/ /etc/s6-overlay/scripts/
 COPY docker/s6/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
 
 RUN rm -f /tmp/patchdoll-validation-ok \
   && ln -sf /app/packages/core/dist/patchdollctl.js /usr/local/bin/patchdollctl \
+  && case "${TARGETARCH:-amd64}" in \
+    amd64) claude_arch="x64" ;; \
+    arm64) claude_arch="arm64" ;; \
+    *) echo "Unsupported TARGETARCH for Claude Code: ${TARGETARCH:-unset}" >&2; exit 1 ;; \
+  esac \
+  && claude_binary="/app/packages/provider-claude/node_modules/@anthropic-ai/claude-code-linux-${claude_arch}/claude" \
+  && test -x "${claude_binary}" \
+  && ln -sf "${claude_binary}" /usr/local/bin/claude \
   && chmod 0444 /etc/codex/AGENTS.md \
   && find /etc/codex/skills -type d -exec chmod 0555 {} + \
   && find /etc/codex/skills -type f -exec chmod 0444 {} + \
+  && find /etc/claude/skills -type d -exec chmod 0555 {} + \
+  && find /etc/claude/skills -type f -exec chmod 0444 {} + \
   && chmod +x \
+  /etc/cont-init.d/10-patchdoll-secrets \
+  /etc/s6-overlay/s6-rc.d/claude-auth/auth.sh \
+  /etc/s6-overlay/s6-rc.d/claude-auth/up \
+  /etc/s6-overlay/s6-rc.d/claude-worker/run \
+  /etc/s6-overlay/s6-rc.d/claude-worker/run.sh \
   /etc/s6-overlay/s6-rc.d/codex-auth/up \
   /etc/s6-overlay/s6-rc.d/codex-worker/run \
   /etc/s6-overlay/s6-rc.d/codex-worker/run.sh \
   /etc/s6-overlay/s6-rc.d/ngrok-tunnel/run \
   /etc/s6-overlay/s6-rc.d/ngrok-tunnel/run.sh \
   /etc/s6-overlay/s6-rc.d/patchdoll/run \
+  /etc/s6-overlay/s6-rc.d/patchdoll/run.sh \
   /etc/s6-overlay/s6-rc.d/slack-bridge/run \
+  /etc/s6-overlay/s6-rc.d/slack-bridge/run.sh \
   /usr/local/bin/patchdoll-peercred \
   /app/packages/core/dist/patchdollctl.js \
   /usr/local/bin/patchdollctl

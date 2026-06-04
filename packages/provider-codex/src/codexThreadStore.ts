@@ -3,6 +3,8 @@ import { DatabaseSync } from "node:sqlite";
 import type { JsonValue } from "@patchdoll/core";
 
 const LEGACY_JSON_MIGRATION_KEY = "legacy_slack_codex_threads_json_migrated";
+const CODEX_THREADS_MIGRATION_KEY = "codex_threads_provider_threads_migrated";
+const PROVIDER = "codex";
 
 export interface CodexThreadRecord {
   sessionId: string;
@@ -35,10 +37,10 @@ export class CodexThreadStore {
           updated_at,
           actor,
           last_event_id
-        FROM codex_threads
-        WHERE thread_key = ?`
+        FROM provider_threads
+        WHERE provider = ? AND thread_key = ?`
       )
-      .get(threadKey);
+      .get(PROVIDER, threadKey);
 
     if (!row) {
       return undefined;
@@ -48,33 +50,15 @@ export class CodexThreadStore {
   }
 
   upsert(threadKey: string, record: CodexThreadRecord): void {
-    this.db
-      .prepare(
-        `INSERT INTO codex_threads (
-          thread_key,
-          session_id,
-          source,
-          actor,
-          last_event_id,
-          created_at,
-          updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(thread_key) DO UPDATE SET
-          session_id = excluded.session_id,
-          source = excluded.source,
-          actor = excluded.actor,
-          last_event_id = excluded.last_event_id,
-          updated_at = excluded.updated_at`
-      )
-      .run(
-        threadKey,
-        record.sessionId,
-        record.source,
-        record.actor ?? null,
-        record.lastEventId ?? null,
-        record.createdAt,
-        record.updatedAt
-      );
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      upsertProviderRecord(this.db, threadKey, record);
+      upsertLegacyCodexRecord(this.db, threadKey, record);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   close(): void {
@@ -121,7 +105,53 @@ function initializeDatabase(db: DatabaseSync): void {
 
     CREATE INDEX IF NOT EXISTS idx_codex_threads_updated_at
       ON codex_threads(updated_at);
+
+    CREATE TABLE IF NOT EXISTS provider_threads (
+      provider TEXT NOT NULL,
+      thread_key TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      source TEXT NOT NULL,
+      actor TEXT,
+      last_event_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (provider, thread_key)
+    ) STRICT;
+
+    CREATE INDEX IF NOT EXISTS idx_provider_threads_updated_at
+      ON provider_threads(updated_at);
   `);
+
+  migrateCodexThreads(db);
+}
+
+function migrateCodexThreads(db: DatabaseSync): void {
+  if (metaValue(db, CODEX_THREADS_MIGRATION_KEY) === "1") {
+    return;
+  }
+
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.prepare(
+      `INSERT OR IGNORE INTO provider_threads (
+        provider,
+        thread_key,
+        session_id,
+        source,
+        actor,
+        last_event_id,
+        created_at,
+        updated_at
+      )
+      SELECT ?, thread_key, session_id, source, actor, last_event_id, created_at, updated_at
+      FROM codex_threads`
+    ).run(PROVIDER);
+    setMetaValue(db, CODEX_THREADS_MIGRATION_KEY, "1");
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 function migrateLegacyJsonStore(db: DatabaseSync, legacyJsonPath: string): void {
@@ -154,6 +184,49 @@ function insertLegacyRecord(
   threadKey: string,
   record: CodexThreadRecord
 ): void {
+  upsertLegacyCodexRecord(db, threadKey, record);
+  upsertProviderRecord(db, threadKey, record);
+}
+
+function upsertProviderRecord(
+  db: DatabaseSync,
+  threadKey: string,
+  record: CodexThreadRecord
+): void {
+  db.prepare(
+    `INSERT INTO provider_threads (
+      provider,
+      thread_key,
+      session_id,
+      source,
+      actor,
+      last_event_id,
+      created_at,
+      updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(provider, thread_key) DO UPDATE SET
+      session_id = excluded.session_id,
+      source = excluded.source,
+      actor = excluded.actor,
+      last_event_id = excluded.last_event_id,
+      updated_at = excluded.updated_at`
+  ).run(
+    PROVIDER,
+    threadKey,
+    record.sessionId,
+    record.source,
+    record.actor ?? null,
+    record.lastEventId ?? null,
+    record.createdAt,
+    record.updatedAt
+  );
+}
+
+function upsertLegacyCodexRecord(
+  db: DatabaseSync,
+  threadKey: string,
+  record: CodexThreadRecord
+): void {
   db.prepare(
     `INSERT INTO codex_threads (
       thread_key,
@@ -164,7 +237,12 @@ function insertLegacyRecord(
       created_at,
       updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(thread_key) DO NOTHING`
+    ON CONFLICT(thread_key) DO UPDATE SET
+      session_id = excluded.session_id,
+      source = excluded.source,
+      actor = excluded.actor,
+      last_event_id = excluded.last_event_id,
+      updated_at = excluded.updated_at`
   ).run(
     threadKey,
     record.sessionId,

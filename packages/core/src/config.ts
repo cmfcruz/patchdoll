@@ -12,6 +12,7 @@ const DEFAULT_CAPABILITIES: Capabilities = {
 };
 
 const DEFAULT_AI: AiConfig = {
+  provider: "codex",
   timeoutSeconds: 900,
   maxConcurrentRuns: 1,
   bypassSandboxAndApprovals: true
@@ -22,6 +23,7 @@ export async function loadConfig(): Promise<PatchdollConfig> {
   const settings = await loadDbSettings();
   const ai = {
     ...DEFAULT_AI,
+    provider: asString(settings["ai.provider"], DEFAULT_AI.provider),
     timeoutSeconds: asNumber(settings["ai.timeoutSeconds"], DEFAULT_AI.timeoutSeconds),
     maxConcurrentRuns: asNumber(settings["ai.maxConcurrentRuns"], DEFAULT_AI.maxConcurrentRuns),
     bypassSandboxAndApprovals: asBoolean(settings["ai.bypassSandboxAndApprovals"], DEFAULT_AI.bypassSandboxAndApprovals),
@@ -36,6 +38,11 @@ export async function loadConfig(): Promise<PatchdollConfig> {
     agentsMdPath: AGENTS_PATH,
     ai: {
       ...ai,
+      provider: providerName(
+        process.env.PATCHDOLL_AI_PROVIDER ??
+          fileConfig.ai?.provider ??
+          ai.provider
+      ),
       timeoutSeconds: parseInteger(
         process.env.PATCHDOLL_AI_TIMEOUT_SECONDS,
         ai.timeoutSeconds
@@ -117,4 +124,16 @@ function asNumber(value: JsonValue | undefined, fallback: number): number {
 
 function asBoolean(value: JsonValue | undefined, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
+}
+
+function asString(value: JsonValue | undefined, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function providerName(value: string): string {
+  const text = value.trim().toLowerCase();
+  if (!/^[a-z][a-z0-9-]*$/.test(text)) {
+    throw new Error("PATCHDOLL_AI_PROVIDER must start with a letter and contain only lowercase letters, numbers, and hyphens");
+  }
+  return text;
 }

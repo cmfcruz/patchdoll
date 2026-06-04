@@ -1,0 +1,430 @@
+import { spawn } from "node:child_process";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { openClaudeThreadStore } from "./claudeThreadStore.js";
+import type {
+  AiProvider,
+  AiResult,
+  JsonValue,
+  TaskContext
+} from "@patchdoll/core";
+import {
+  buildPatchdollPrompt,
+  extractProposedActionsFromMessage,
+  patchdollThreadKey,
+  stringifyLogJson
+} from "@patchdoll/core";
+import {
+  CLAUDE_EFFORTS,
+  DEFAULT_SETTINGS,
+  openPatchdollSettingsStoreSync
+} from "@patchdoll/core/settings";
+
+const CLAUDE_HOME = "/patchdoll/claude";
+const STATE_DIR = "/patchdoll/state";
+const PATCHDOLL_WORKDIR = "/workspace";
+const MAX_CAPTURED_OUTPUT_BYTES = 256000;
+const LOG_LEVELS = ["trace", "debug", "info", "warn"] as const;
+type LogLevel = (typeof LOG_LEVELS)[number];
+const LOG_LEVEL_ORDER: Record<LogLevel, number> = {
+  trace: 10,
+  debug: 20,
+  info: 30,
+  warn: 40
+};
+const DEFAULT_LOG_LEVEL: LogLevel = "info";
+const MAX_LOG_VALUE_LENGTH = 4000;
+const PATCHDOLL_LOG_LEVEL = parseLogLevel(process.env.PATCHDOLL_LOG_LEVEL);
+
+interface ClaudeInvocation {
+  prompt: string;
+  workdir: string;
+  model: string;
+  effort: string;
+  permissionMode: string;
+  maxTurns: number;
+  runtimeEnv: Record<string, string>;
+  sessionId?: string;
+}
+
+interface ClaudeJsonResult {
+  type?: string;
+  subtype?: string;
+  is_error?: boolean;
+  result?: string;
+  session_id?: string;
+  total_cost_usd?: number;
+  duration_ms?: number;
+  duration_api_ms?: number;
+  num_turns?: number;
+}
+
+export class ClaudeAiProvider implements AiProvider {
+  private running = 0;
+
+  constructor(
+    private readonly timeoutMs: number,
+    private readonly maxConcurrentRuns: number,
+    private readonly stateDir = STATE_DIR,
+    private readonly claudeBin = "claude"
+  ) {}
+
+  async run(
+    task: TaskContext,
+    runtimeEnv: Record<string, string> = {}
+  ): Promise<AiResult> {
+    if (this.running >= this.maxConcurrentRuns) {
+      throw new Error("Claude AI concurrency limit reached");
+    }
+
+    this.running += 1;
+    try {
+      return await this.runClaude(task, runtimeEnv);
+    } finally {
+      this.running -= 1;
+    }
+  }
+
+  private async runClaude(
+    task: TaskContext,
+    runtimeEnv: Record<string, string>
+  ): Promise<AiResult> {
+    await mkdir(CLAUDE_HOME, { recursive: true, mode: 0o700 });
+    await mkdir(this.stateDir, { recursive: true, mode: 0o700 });
+
+    const model = claudeModel();
+    const effort = claudeEffort();
+    const permissionMode = claudePermissionMode();
+    const maxTurns = claudeMaxTurns();
+    const threadKey = patchdollThreadKey(task);
+    const stateDbPath = join(this.stateDir, "patchdoll.sqlite");
+    const store = openClaudeThreadStore(stateDbPath);
+    const startedAt = new Date();
+
+    let result: ClaudeJsonResult;
+    let existing;
+    try {
+      existing = store.get(threadKey);
+      result = await this.invokeClaude({
+        prompt: buildPatchdollPrompt(task, {
+          agentName: "Claude Code",
+          threadKey,
+          continuingPriorThread: Boolean(existing),
+          settingsExample: '{"claude":{"model":"opus","effort":"high"}}'
+        }),
+        workdir: PATCHDOLL_WORKDIR,
+        model,
+        effort,
+        permissionMode,
+        maxTurns,
+        runtimeEnv,
+        sessionId: existing?.sessionId
+      });
+
+      // Resuming a session returns its (possibly forked) id; persist whatever
+      // the latest run reported so the next turn resumes from the newest point.
+      const sessionId = result.session_id ?? existing?.sessionId;
+      if (sessionId) {
+        store.upsert(threadKey, {
+          sessionId,
+          source: task.event.source,
+          createdAt: existing?.createdAt ?? startedAt.toISOString(),
+          updatedAt: new Date().toISOString(),
+          actor: task.event.actor,
+          lastEventId: task.event.id
+        });
+      }
+    } finally {
+      store.close();
+    }
+
+    const sessionId = result.session_id ?? existing?.sessionId;
+    const finalMessage = result.result?.trim() || "Claude Code returned no response.";
+    const extracted = extractProposedActionsFromMessage(finalMessage);
+    const reply = extracted.reply || "Claude Code returned no response.";
+    const proposedActions = extracted.proposedActions;
+    const metadata: Record<string, JsonValue> = {
+      provider: "claude",
+      model,
+      effort,
+      permissionMode,
+      maxTurns,
+      threadKey,
+      resumed: Boolean(existing),
+      sessionPersisted: Boolean(sessionId)
+    };
+
+    if (sessionId) metadata.sessionId = sessionId;
+    if (typeof result.total_cost_usd === "number") {
+      metadata.totalCostUsd = result.total_cost_usd;
+    }
+    if (typeof result.num_turns === "number") metadata.numTurns = result.num_turns;
+    if (typeof result.duration_ms === "number") metadata.durationMs = result.duration_ms;
+    if (typeof result.duration_api_ms === "number") {
+      metadata.durationApiMs = result.duration_api_ms;
+    }
+
+    return {
+      reply,
+      proposedActions: [
+        {
+          type: "chat.reply",
+          body: reply
+        },
+        ...proposedActions
+      ],
+      metadata
+    };
+  }
+
+  private async invokeClaude(invocation: ClaudeInvocation): Promise<ClaudeJsonResult> {
+    writePatchdollLog("debug", "claude invocation start", {
+      model: invocation.model,
+      permissionMode: invocation.permissionMode,
+      maxTurns: invocation.maxTurns,
+      workdir: invocation.workdir,
+      resuming: Boolean(invocation.sessionId)
+    });
+    return new Promise((resolve, reject) => {
+      const child = spawn(this.claudeBin, claudeArgs(invocation), {
+        cwd: invocation.workdir,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: buildClaudeEnv(invocation.runtimeEnv)
+      });
+      let stdout = "";
+      let stderr = "";
+      let settled = false;
+
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        child.kill("SIGTERM");
+        writePatchdollLog("warn", "claude invocation timed out", {
+          timeoutMs: this.timeoutMs
+        });
+        reject(new Error(`Claude Code timed out after ${this.timeoutMs}ms`));
+      }, this.timeoutMs);
+
+      child.stdout?.setEncoding("utf8");
+      child.stderr?.setEncoding("utf8");
+      child.stdout?.on("data", (chunk: string) => {
+        stdout = appendTail(stdout, chunk);
+        if (shouldLog("trace")) {
+          writePatchdollLog("trace", "claude stdout", {
+            chunk: truncateLogValue(chunk)
+          });
+        }
+      });
+      child.stderr?.on("data", (chunk: string) => {
+        stderr = appendTail(stderr, chunk);
+        if (shouldLog("trace")) {
+          writePatchdollLog("trace", "claude stderr", {
+            chunk: truncateLogValue(chunk)
+          });
+        }
+      });
+      child.on("error", (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        writePatchdollLog("warn", "claude failed to start", {
+          bin: this.claudeBin,
+          error: error.message
+        });
+        reject(new Error(`Claude Code failed to start (${this.claudeBin}): ${error.message}`));
+      });
+      child.on("close", (code) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (code !== 0) {
+          writePatchdollLog("warn", "claude exited with non-zero code", {
+            code: code ?? null,
+            stderr: truncateLogValue(tailForError(stderr || stdout))
+          });
+          reject(new Error(`Claude Code exited with ${code ?? "unknown"}: ${tailForError(stderr || stdout)}`));
+          return;
+        }
+
+        try {
+          const parsed = JSON.parse(stdout) as ClaudeJsonResult;
+          if (parsed.is_error) {
+            writePatchdollLog("warn", "claude returned an error result", {
+              subtype: parsed.subtype ?? null
+            });
+            reject(new Error(`Claude Code returned an error result: ${parsed.subtype ?? "unknown"}`));
+            return;
+          }
+          writePatchdollLog("debug", "claude invocation completed", {
+            subtype: parsed.subtype,
+            numTurns: parsed.num_turns,
+            durationMs: parsed.duration_ms,
+            durationApiMs: parsed.duration_api_ms,
+            totalCostUsd: parsed.total_cost_usd,
+            sessionId: parsed.session_id
+          });
+          resolve(parsed);
+        } catch (error) {
+          writePatchdollLog("warn", "claude returned invalid JSON", {
+            error: messageOf(error),
+            stdout: truncateLogValue(tailForError(stdout))
+          });
+          reject(new Error(`Claude Code returned invalid JSON: ${messageOf(error)}`));
+        }
+      });
+    });
+  }
+}
+
+function claudeArgs(invocation: ClaudeInvocation): string[] {
+  const args = [
+    "-p",
+    invocation.prompt,
+    "--output-format",
+    "json",
+    "--model",
+    invocation.model,
+    "--effort",
+    invocation.effort,
+    "--permission-mode",
+    invocation.permissionMode
+  ];
+  if (invocation.sessionId) {
+    args.push("--resume", invocation.sessionId);
+  }
+  if (invocation.maxTurns > 0) {
+    args.push("--max-turns", String(invocation.maxTurns));
+  }
+  return args;
+}
+
+function buildClaudeEnv(
+  runtimeEnv: Record<string, string> = {}
+): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    PATH: process.env.PATH,
+    HOME: CLAUDE_HOME,
+    CLAUDE_CONFIG_DIR: CLAUDE_HOME,
+    DISABLE_AUTOUPDATER: "1",
+    TERM: process.env.TERM,
+    LANG: process.env.LANG,
+    LC_ALL: process.env.LC_ALL,
+    LC_CTYPE: process.env.LC_CTYPE
+  };
+  if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
+    env.CLAUDE_CODE_OAUTH_TOKEN = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  }
+  if (process.env.ANTHROPIC_API_KEY) {
+    env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+  }
+  // Runtime env (e.g. GH_TOKEN/GITHUB_TOKEN minted from the GitHub App) is
+  // injected last so the spawned `claude` process can use the `gh` CLI.
+  Object.assign(env, runtimeEnv);
+  return env;
+}
+
+function claudeModel(): string {
+  const value = setting("claude.model", DEFAULT_SETTINGS["claude.model"]);
+  return typeof value === "string" ? value : DEFAULT_SETTINGS["claude.model"];
+}
+
+function claudeEffort(): string {
+  const value = setting("claude.effort", DEFAULT_SETTINGS["claude.effort"]);
+  const effort = typeof value === "string" ? value : DEFAULT_SETTINGS["claude.effort"];
+
+  if (!(CLAUDE_EFFORTS as readonly string[]).includes(effort)) {
+    throw new Error(`claude.effort must be one of ${CLAUDE_EFFORTS.join(", ")}`);
+  }
+
+  return effort;
+}
+
+function claudePermissionMode(): string {
+  const value = setting("claude.permissionMode", DEFAULT_SETTINGS["claude.permissionMode"]);
+  return typeof value === "string" ? value : DEFAULT_SETTINGS["claude.permissionMode"];
+}
+
+function claudeMaxTurns(): number {
+  const value = setting("claude.maxTurns", DEFAULT_SETTINGS["claude.maxTurns"]);
+  return typeof value === "number" ? value : DEFAULT_SETTINGS["claude.maxTurns"];
+}
+
+function setting(key: string, fallback: JsonValue): JsonValue {
+  const store = openPatchdollSettingsStoreSync();
+  try {
+    return store.get(key) ?? fallback;
+  } finally {
+    store.close();
+  }
+}
+
+function appendTail(current: string, chunk: string): string {
+  const next = current + chunk;
+  return next.length <= MAX_CAPTURED_OUTPUT_BYTES
+    ? next
+    : next.slice(next.length - MAX_CAPTURED_OUTPUT_BYTES);
+}
+
+function tailForError(value: string): string {
+  const trimmed = value.trim();
+  return trimmed || "no output";
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function writePatchdollLog(
+  level: LogLevel,
+  message: string,
+  fields: Record<string, JsonValue | undefined> = {}
+): void {
+  const entry: Record<string, JsonValue> = {
+    level,
+    source: "patchdoll.provider-claude",
+    message
+  };
+
+  for (const [key, value] of Object.entries(fields)) {
+    if (value !== undefined) {
+      entry[key] = value;
+    }
+  }
+
+  const serialized = stringifyLogJson(entry);
+  if (level === "warn") {
+    console.warn(serialized);
+  } else {
+    console.log(serialized);
+  }
+}
+
+function shouldLog(level: LogLevel): boolean {
+  return LOG_LEVEL_ORDER[PATCHDOLL_LOG_LEVEL] <= LOG_LEVEL_ORDER[level];
+}
+
+function truncateLogValue(value: string): string {
+  const suffix = "...[truncated]";
+  return value.length <= MAX_LOG_VALUE_LENGTH
+    ? value
+    : `${value.slice(0, MAX_LOG_VALUE_LENGTH - suffix.length)}${suffix}`;
+}
+
+function parseLogLevel(value: string | undefined): LogLevel {
+  if (!value) {
+    return DEFAULT_LOG_LEVEL;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if ((LOG_LEVELS as readonly string[]).includes(normalized)) {
+    return normalized as LogLevel;
+  }
+
+  console.warn(stringifyLogJson({
+    level: "warn",
+    source: "patchdoll.provider-claude",
+    message: "Invalid PATCHDOLL_LOG_LEVEL; using info.",
+    value
+  }));
+  return DEFAULT_LOG_LEVEL;
+}

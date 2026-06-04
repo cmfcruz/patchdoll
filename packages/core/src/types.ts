@@ -12,6 +12,7 @@ export interface ServerConfig {
 }
 
 export interface AiConfig {
+  provider: string;
   timeoutSeconds: number;
   maxConcurrentRuns: number;
   bypassSandboxAndApprovals: boolean;
