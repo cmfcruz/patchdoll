@@ -70,6 +70,26 @@ test("isClaudeResumeFailure does NOT self-heal on generic failures", () => {
   }
 });
 
+test("broad, non-resume phrases do NOT trigger a false self-heal", () => {
+  // Anchored signatures only: bare session phrasing must not match (see #22 review).
+  assert.equal(
+    isCodexResumeFailure(new Error("Codex CLI exited with 1: session not found")).matched,
+    false
+  );
+  assert.equal(
+    isCodexResumeFailure(new Error("Codex CLI exited with 1: unknown session")).matched,
+    false
+  );
+  assert.equal(
+    isClaudeResumeFailure(new Error("Claude Code exited with 1: no such session")).matched,
+    false
+  );
+  assert.equal(
+    isClaudeResumeFailure(new Error("Claude Code exited with 1: session not found")).matched,
+    false
+  );
+});
+
 test("classifiers accept non-Error thrown values", () => {
   assert.equal(isCodexResumeFailure("no rollout found").matched, true);
   assert.equal(isClaudeResumeFailure({ unexpected: true }).matched, false);

@@ -51,28 +51,36 @@ function errorMessage(error: unknown): string {
 /**
  * Substrings that mark a `codex exec resume` failure as a resume-restoration
  * failure (rollout pruned/rotated/missing) rather than a generic run failure.
+ *
+ * Every entry is anchored to resume/rollout wording so it cannot match
+ * unrelated CLI output. Deliberately NOT here: bare phrases like
+ * "session not found" / "unknown session" — they can surface from causes that
+ * have nothing to do with resume, and a false match would wrongly delete a
+ * valid session. We accept the trade-off that a genuinely dead session whose
+ * error lacks these phrases stays wedged until the wording is added here.
  */
 export const CODEX_RESUME_FAILURE_SIGNATURES = [
   "no rollout found",
   "rollout not found",
   "failed to resume",
   "could not resume",
-  "thread/resume",
-  "session not found",
-  "unknown session"
+  "unable to resume",
+  "thread/resume"
 ] as const;
 
 /**
  * Substrings that mark a Claude Code `--resume` failure as a resume-restoration
  * failure (transcript pruned/rotated/missing) rather than a generic run failure.
+ *
+ * Anchored to resume wording or Claude's specific "no conversation found with
+ * session ID" miss message. Bare "session not found" / "no such session" are
+ * intentionally excluded — see the Codex list above for the rationale.
  */
 export const CLAUDE_RESUME_FAILURE_SIGNATURES = [
   "no conversation found",
-  "session id not found",
-  "session not found",
-  "no such session",
+  "failed to resume",
   "could not resume",
-  "failed to resume"
+  "unable to resume"
 ] as const;
 
 /** True (with the matched signature) when `error` looks like a Codex resume-restoration failure. */
