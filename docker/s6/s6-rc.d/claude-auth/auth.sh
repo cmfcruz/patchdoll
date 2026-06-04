@@ -33,15 +33,15 @@ if ! command -v claude >/dev/null 2>&1; then
   exit 1
 fi
 
-claude_home="/patchdoll/claude"
+claude_home="/patchdoll/agent"
 state_dir="/patchdoll/state"
 export HOME="$claude_home"
 export CLAUDE_CONFIG_DIR="$claude_home"
 export DISABLE_AUTOUPDATER=1
 mkdir -p "$claude_home" "$state_dir"
-chown claude:patchdoll-ipc "$claude_home"
+chown agent:patchdoll-ipc "$claude_home"
 chmod 0770 "$claude_home"
-chown -R claude:patchdoll-ipc "$state_dir"
+chown -R agent:patchdoll-ipc "$state_dir"
 find "$state_dir" -type d -exec chmod 2770 {} +
 find "$state_dir" -type f -exec chmod 0660 {} +
 
@@ -49,8 +49,8 @@ if [ -n "$claude_code_oauth_token" ]; then
   log "Claude Code OAuth token found in runtime secrets"
 elif [ -n "$anthropic_api_key" ]; then
   log "Anthropic API key found in runtime secrets"
-elif s6-setuidgid claude claude auth status >/dev/null 2>&1; then
+elif s6-setuidgid agent claude auth status >/dev/null 2>&1; then
   log "Claude Code is already authenticated"
 else
-  log "No Claude Code env credential found; generate one with 'claude setup-token' or pre-authenticate /patchdoll/claude"
+  log "No Claude Code env credential found; generate one with 'claude setup-token' or pre-authenticate /patchdoll/agent"
 fi

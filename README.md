@@ -80,7 +80,7 @@ chmod 600 "$PATCHDOLL_HOME/secrets.env"
 If you want noninteractive Codex login, add `OPENAI_API_KEY=...` or
 `CODEX_ACCESS_TOKEN=...` to this same file. If neither is present, Patchdoll
 starts Codex device-code auth on first startup and stores the login state in
-`/patchdoll/codex`.
+`/patchdoll/agent`.
 
 ### 4. Run Patchdoll
 
@@ -142,7 +142,7 @@ Patchdoll uses fixed paths inside the container:
 
 - `/workspace`: the project Patchdoll can inspect or edit
 - `/patchdoll/state`: Patchdoll state database
-- `/patchdoll/codex`: Codex login and session data
+- `/patchdoll/agent`: provider (Codex or Claude) login and session data
 - `/run/secrets/patchdoll.env`: secret tokens
 
 You do not need a `config.json` for the normal setup. Patchdoll has defaults.

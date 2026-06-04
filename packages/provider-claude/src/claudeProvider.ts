@@ -20,7 +20,7 @@ import {
   openPatchdollSettingsStoreSync
 } from "@patchdoll/core/settings";
 
-const CLAUDE_HOME = "/patchdoll/claude";
+const CLAUDE_HOME = "/patchdoll/agent";
 const STATE_DIR = "/patchdoll/state";
 const PATCHDOLL_WORKDIR = "/workspace";
 const MAX_CAPTURED_OUTPUT_BYTES = 256000;
