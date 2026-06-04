@@ -73,8 +73,14 @@ git trailers parseable and intentional.
 - Use `Closes #N` or `Fixes #N` only when merging the commit or PR should close the issue.
 - Use `Refs: #N` when the work is related but should not auto-close the issue.
 - Use `BREAKING CHANGE: ...` for breaking-change details.
-- Use `Co-authored-by: Name <email>` for co-author trailers.
+- Use `Co-authored-by: Name <email>` only for human co-authors or explicitly approved project identities.
+- Do not add AI tools, assistants, or model names as commit co-authors by default.
+- If AI assistance should be disclosed, prefer the PR body rather than commit trailers.
 - Put each footer or trailer on its own line.
+
+AI-assisted commits are still authored by the human who reviewed, accepted, and
+submitted the change. The commit history should preserve accountability rather
+than record every tool involved in drafting or editing.
 
 ## Examples
 
@@ -100,7 +106,7 @@ accidentally pass literal \n sequences to git.
 
 Refs: #12
 
-Co-authored-by: Patchdoll <patchdoll@example.invalid>
+Co-authored-by: Jane Reviewer <jane@example.com>
 ```
 
 Invalid examples:
