@@ -147,6 +147,25 @@ Now test:
 /patchdoll say hi
 ```
 
+## Troubleshooting: thread transcript says `slack_missing_scope`
+
+Patchdoll reads Slack threads with Slack's `conversations.replies` API. If the
+logs show `slack_missing_scope`, the bot token is installed without the history
+scope needed for that conversation type.
+
+Add the matching **Bot Token Scope** under **OAuth & Permissions**:
+
+| Conversation type | Required bot scope |
+| --- | --- |
+| Public channels | `channels:history` |
+| Private channels | `groups:history` |
+| Direct messages | `im:history` |
+| Group direct messages | `mpim:history` |
+
+Then reinstall the app to the workspace. Yes, Slack makes the reinstall step
+easy to forget, because apparently scopes are only real after a tiny ceremony.
+Restart Patchdoll too if you replaced the bot token.
+
 ## Optional: Allow Slack Admin Settings Changes
 
 Patchdoll does not allow Slack users to change Patchdoll settings unless their

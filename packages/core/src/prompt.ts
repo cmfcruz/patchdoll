@@ -89,11 +89,20 @@ function slackThreadContextPrompt(task: TaskContext): string[] {
   }
 
   if (context.available === false) {
-    return [
+    const lines = [
       "",
       "Slack thread transcript:",
       `- unavailable: ${jsonString(context.reason) ?? "unknown_reason"}`
     ];
+    const requiredScopes = jsonStringArray(context.requiredScopes);
+    if (requiredScopes.length) {
+      lines.push(`- required Slack bot scope(s): ${requiredScopes.join(", ")}`);
+    }
+    const remediation = jsonString(context.remediation);
+    if (remediation) {
+      lines.push(`- remediation: ${remediation}`);
+    }
+    return lines;
   }
 
   const messages = Array.isArray(context.messages) ? context.messages : [];
@@ -185,6 +194,14 @@ function jsonString(value: JsonValue | undefined): string | undefined {
   }
 
   return undefined;
+}
+
+function jsonStringArray(value: JsonValue | undefined): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((item): item is string => typeof item === "string");
 }
 
 function isJsonObject(value: unknown): value is Record<string, JsonValue> {
