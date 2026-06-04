@@ -46,12 +46,12 @@ secret_value() {
   return 1
 }
 
-# Single-quote a value so it round-trips when the env file is sourced.
+# Single-quote a value for the secret env file. The file is read line-by-line
+# by secret_value (above) and the dotenv parser — both strip one outer quote
+# layer — and is never sourced, so a literal single quote in the value needs no
+# escaping.
 shell_quote() {
-  local value="$1"
-  printf "'"
-  printf '%s' "$value" | sed "s/'/'\\''/g"
-  printf "'"
+  printf "'%s'" "$1"
 }
 
 # Move a secret out of the process environment into the root-owned env file so
