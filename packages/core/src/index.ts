@@ -16,3 +16,4 @@ export * from "./settings.js";
 export * from "./prompt.js";
 export * from "./proposedActions.js";
 export * from "./providerWorker.js";
+export * from "./resumeFailure.js";

@@ -21,6 +21,7 @@ import type {
 import {
   buildPatchdollPrompt,
   extractProposedActionsFromMessage,
+  isCodexResumeFailure,
   patchdollThreadKey,
   stringifyLogJson
 } from "@patchdoll/core";
@@ -157,7 +158,14 @@ export class CodexAiProvider implements AiProvider {
       try {
         stdout = await invoke(existing?.sessionId);
       } catch (error) {
-        if (!existing?.sessionId) {
+        // Only self-heal when the stored session itself failed to resume. Any
+        // other failure (timeout, auth, CLI startup, or a real agent failure
+        // after resume already succeeded) must propagate untouched — clearing
+        // the session there would discard valid context and duplicate work.
+        const resume = existing?.sessionId
+          ? isCodexResumeFailure(error)
+          : { matched: false };
+        if (!resume.matched) {
           throw error;
         }
         // A stored session can become unresumable if its rollout file was
@@ -167,6 +175,7 @@ export class CodexAiProvider implements AiProvider {
         // thread self-heals.
         writePatchdollLog("warn", "codex resume failed; clearing session and retrying fresh", {
           threadKey,
+          signature: resume.signature,
           error: messageOf(error)
         });
         store.delete(threadKey);

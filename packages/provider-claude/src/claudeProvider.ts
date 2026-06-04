@@ -11,6 +11,7 @@ import type {
 import {
   buildPatchdollPrompt,
   extractProposedActionsFromMessage,
+  isClaudeResumeFailure,
   patchdollThreadKey,
   stringifyLogJson
 } from "@patchdoll/core";
@@ -126,7 +127,14 @@ export class ClaudeAiProvider implements AiProvider {
       try {
         result = await invoke(existing?.sessionId);
       } catch (error) {
-        if (!existing?.sessionId) {
+        // Only self-heal when the stored session itself failed to resume. Any
+        // other failure (timeout, auth, CLI startup, or a real agent failure
+        // after resume already succeeded) must propagate untouched — clearing
+        // the session there would discard valid context and duplicate work.
+        const resume = existing?.sessionId
+          ? isClaudeResumeFailure(error)
+          : { matched: false };
+        if (!resume.matched) {
           throw error;
         }
         // A stored session can become unresumable if its transcript was pruned
@@ -135,6 +143,7 @@ export class ClaudeAiProvider implements AiProvider {
         // retry once as a fresh session so the thread self-heals.
         writePatchdollLog("warn", "claude resume failed; clearing session and retrying fresh", {
           threadKey,
+          signature: resume.signature,
           error: messageOf(error)
         });
         store.delete(threadKey);
