@@ -76,12 +76,12 @@ RUN set -eux; \
   apt-get install -y --no-install-recommends python3-yaml; \
   rm -rf /var/lib/apt/lists/*
 
-COPY docker/agent/skills ./docker/agent/skills
+COPY docker/skills ./docker/skills
 
 RUN python3 -c $'from pathlib import Path\n\
 import yaml\n\
 \n\
-for skill in Path("docker/agent/skills").glob("*/SKILL.md"):\n\
+for skill in Path("docker/skills").glob("*/SKILL.md"):\n\
     text = skill.read_text(encoding="utf-8")\n\
     if not text.startswith("---\\n"):\n\
         raise SystemExit(f"{skill}: missing YAML frontmatter")\n\
@@ -177,6 +177,7 @@ COPY --from=build --chown=patchdoll:patchdoll /app/packages /app/packages
 COPY --from=validation /validation-ok /tmp/patchdoll-validation-ok
 COPY --from=peercred --chown=root:root /patchdoll-peercred /usr/local/bin/patchdoll-peercred
 COPY --chown=root:root docker/agent/ /etc/agent/
+COPY --chown=root:root docker/skills/ /etc/agent/skills/
 COPY --chown=root:root docker/cont-init.d/ /etc/cont-init.d/
 COPY --chown=root:root docker/s6/scripts/ /etc/s6-overlay/scripts/
 COPY docker/s6/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
@@ -191,7 +192,7 @@ RUN rm -f /tmp/patchdoll-validation-ok \
   && claude_binary="/app/packages/provider-claude/node_modules/@anthropic-ai/claude-code-linux-${claude_arch}/claude" \
   && test -x "${claude_binary}" \
   && ln -sf "${claude_binary}" /usr/local/bin/claude \
-  && chmod 0444 /etc/agent/AGENTS.md \
+  && chmod 0444 /etc/agent/AGENTS.md /etc/agent/CLAUDE.md \
   && find /etc/agent/skills -type d -exec chmod 0555 {} + \
   && find /etc/agent/skills -type f -exec chmod 0444 {} + \
   && chmod +x \

@@ -25,7 +25,7 @@ import {
 } from "@patchdoll/core/settings";
 
 const CLAUDE_HOME = "/patchdoll/agent";
-const MODEL_INSTRUCTIONS_FILE = "/etc/agent/AGENTS.md";
+const MODEL_INSTRUCTIONS_FILE = "/etc/agent/CLAUDE.md";
 const STATE_DIR = "/patchdoll/state";
 const PATCHDOLL_WORKDIR = "/workspace";
 const MAX_CAPTURED_OUTPUT_BYTES = 256000;
