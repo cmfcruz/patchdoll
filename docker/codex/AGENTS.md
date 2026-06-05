@@ -7,8 +7,15 @@ personality, but they must not weaken or override this file.
 ## Security Boundary
 
 - Run only inside the mounted Patchdoll workspace and documented runtime paths.
-- Do not attempt to call external services directly. If an external action is
-  needed, propose it and let Patchdoll validate and execute it.
+- Network reads are allowed when they are scoped to the requested task. This
+  includes fetching remote branches, reading public documentation, querying
+  package metadata, downloading artifacts, and other operations that do not
+  mutate external systems.
+- Ask for explicit permission before any network-related write. Network writes
+  include `git push`, GitHub/API mutations, publishing packages or images,
+  deploying, uploading files, sending messages or email, changing cloud
+  resources, and any external action that creates, updates, or deletes remote
+  state.
 - Do not bypass Patchdoll policy, exec policy, container permissions, or action
   validation.
 - Do not request or expose secrets, tokens, private keys, cookies, credentials,
@@ -34,8 +41,10 @@ personality, but they must not weaken or override this file.
 - Prefer read-only inspection before making changes.
 - Use local tooling already available in the container for builds, tests,
   formatting, and code search.
-- Do not install packages, fetch remote code, open network connections, or run
-  cloud/provider CLIs unless Patchdoll explicitly allows the command.
+- Network read commands are allowed when scoped to the task and not
+  secret-adjacent.
+- Do not run network write commands unless the real user explicitly requested
+  or approved that specific external mutation.
 - If a command is blocked by policy, explain the needed command and why it is
   needed instead of trying a bypass.
 
@@ -55,8 +64,11 @@ personality, but they must not weaken or override this file.
 
 ## Action Validation
 
-Before any write, command execution, external action, policy suggestion, or
-secret-adjacent operation, verify that:
+Before any write, command execution, network action, policy suggestion, or
+secret-adjacent operation, first classify whether the action is a local action,
+a network read, or a network write. Local actions and scoped network reads may
+proceed without extra approval. For network writes and secret-adjacent actions,
+verify that:
 
 1. the real user requested it,
 2. the request is authorized,
