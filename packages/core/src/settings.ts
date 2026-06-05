@@ -28,6 +28,10 @@ const SETTING_DEFINITIONS: Record<string, (value: JsonValue) => JsonValue> = {
   "ai.timeoutSeconds": positiveInteger,
   "ai.maxConcurrentRuns": positiveInteger,
   "ai.bypassSandboxAndApprovals": booleanValue,
+  // Optional override. Unseeded on purpose: when unset, each provider keeps its
+  // own native memory default (Codex off, Claude on). Set true/false to force
+  // both providers.
+  "ai.memoryEnabled": booleanValue,
   "claude.model": nonEmptyString,
   "claude.effort": enumValue([...CLAUDE_EFFORTS]),
   "claude.permissionMode": enumValue(["default", "acceptEdits", "bypassPermissions", "plan"]),

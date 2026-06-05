@@ -51,7 +51,7 @@ function required(value: string | undefined, label: string): string {
 }
 
 function usage(): void {
-  console.log(`Usage:\n  patchdollctl settings list\n  patchdollctl settings get <key>\n  patchdollctl settings set <key> <json-or-string>\n\nExamples:\n  patchdollctl settings set ai.provider codex\n  patchdollctl settings set ai.provider claude\n  patchdollctl settings set claude.model sonnet\n  patchdollctl settings set claude.effort high\n  patchdollctl settings set codex.reasoningEffort high\n  patchdollctl settings set codex.fastMode true`);
+  console.log(`Usage:\n  patchdollctl settings list\n  patchdollctl settings get <key>\n  patchdollctl settings set <key> <json-or-string>\n\nExamples:\n  patchdollctl settings set ai.provider codex\n  patchdollctl settings set ai.provider claude\n  patchdollctl settings set claude.model sonnet\n  patchdollctl settings set claude.effort high\n  patchdollctl settings set codex.reasoningEffort high\n  patchdollctl settings set codex.fastMode true\n  patchdollctl settings set ai.memoryEnabled false`);
 }
 
 main(process.argv.slice(2)).catch((error) => {

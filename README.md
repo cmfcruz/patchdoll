@@ -303,7 +303,24 @@ patchdollctl settings set claude.model sonnet
 patchdollctl settings set claude.effort high
 patchdollctl settings set claude.permissionMode default
 patchdollctl settings set claude.maxTurns 0
+patchdollctl settings set ai.memoryEnabled false
 ```
+
+`ai.memoryEnabled` is a provider-neutral override for the AI agent's
+cross-thread memory. Flip it at runtime via `patchdollctl` or, for listed
+admins, from Slack — no rebuild needed.
+
+**By default the setting is unset, and that is intentional: each provider keeps
+its own native memory default.** Codex ships with memory *off*; Claude Code
+ships with memory *on*. We deliberately do not unify these out of the box so
+that people already familiar with either tool are not surprised by a change in
+how the agent behaves. Setting the value explicitly overrides both providers:
+
+- `ai.memoryEnabled` unset → native defaults (Codex off, Claude on).
+- `ai.memoryEnabled false` → memory off everywhere. Claude Code runs with
+  `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`; Codex keeps its default-off behavior.
+- `ai.memoryEnabled true` → memory on everywhere. Codex runs with
+  `features.memories=true`; Claude Code keeps its default-on behavior.
 
 ### Let Slack admins change Patchdoll settings
 
