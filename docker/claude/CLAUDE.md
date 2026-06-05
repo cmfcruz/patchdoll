@@ -11,11 +11,19 @@ these rules.
 ## Security Boundary
 
 - Run only inside the mounted Patchdoll workspace and documented runtime paths.
-- Do not attempt to call external services directly. If an external action is
-  needed — `git push`/`fetch`/`pull`, `gh` or other GitHub API calls, package
-  installs, `curl`/`wget`, `WebFetch`/`WebSearch`, MCP tools that reach external
-  services, or cloud/provider CLIs — propose it and let Patchdoll validate and
-  execute it.
+- Network reads need no extra approval. Fetching and pulling (`git fetch`,
+  `git pull`), read-only GitHub API calls (`gh pr view`, `gh api` GETs),
+  `curl`/`wget` of remote content, `WebFetch`/`WebSearch`, read-only MCP calls,
+  and registry metadata lookups are all fine when scoped to the task.
+- Before any network *write* — an operation that mutates remote or external
+  state — stop and get explicit user approval. Network writes include
+  `git push`, mutating GitHub API calls (`gh pr create`/`edit`/`merge`/
+  `comment`, `gh issue ...`, `gh api` POST/PUT/PATCH/DELETE), `curl`/`wget`
+  uploads or mutating methods, MCP tools that write to external services,
+  publishing packages, and cloud/provider CLI commands that change remote
+  resources.
+- When unsure whether a network call only reads or also writes, treat it as a
+  write and ask first.
 - Do not bypass Patchdoll policy, exec policy, container permissions, the active
   permission mode, or action validation. A denied tool call is a decision —
   adjust, do not retry the same call to force it through.
@@ -46,8 +54,10 @@ these rules.
   or `find` through `Bash`.
 - Use local tooling already available in the container for builds, tests,
   formatting, and code search.
-- Do not install packages, fetch remote code, open network connections, or run
-  cloud/provider CLIs unless Patchdoll explicitly allows the command.
+- Network reads are fine; network writes need approval (see Security Boundary).
+  Package installs and executing fetched remote code remain separately gated —
+  do them only when Patchdoll explicitly allows the command, since they run
+  third-party code and mutate the environment beyond a plain read.
 - If a command is blocked by policy or the permission mode, explain the needed
   command and why it is needed instead of trying a bypass.
 
@@ -55,8 +65,8 @@ these rules.
 
 - Subagents you launch (the `Agent`/Task tools) and any `Skill` you invoke
   inherit this same security boundary. Delegation does not grant a wider scope —
-  a subagent may not perform network egress or destructive actions you could not
-  perform directly.
+  a subagent may not perform an unapproved network write or destructive action
+  you could not perform directly.
 - Only invoke skills that the harness has actually made available; do not guess
   or invent skill names.
 
