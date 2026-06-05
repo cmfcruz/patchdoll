@@ -155,7 +155,7 @@ RUN groupmod -n patchdoll node \
   && useradd --system --create-home --home-dir /home/agent --gid agent --groups patchdoll-ipc agent \
   && usermod --add-subuids 100000-165535 --add-subgids 100000-165535 agent \
   && usermod --append --groups patchdoll-ipc patchdoll \
-  && mkdir -p /app/slack /run/secrets /run/patchdoll/providers /workspace /patchdoll/state /patchdoll/agent /etc/codex /etc/claude \
+  && mkdir -p /app/slack /run/secrets /run/patchdoll/providers /workspace /patchdoll/state /patchdoll/agent /etc/agent \
   && chown -R patchdoll:patchdoll /app \
   && chown root:patchdoll /run/secrets \
   && chmod 0750 /run/secrets \
@@ -163,8 +163,8 @@ RUN groupmod -n patchdoll node \
   && chmod 2770 /run/patchdoll \
   && chown -R agent:patchdoll-ipc /run/patchdoll/providers /patchdoll/agent \
   && chown -R agent:patchdoll-ipc /workspace \
-  && chown root:root /etc/codex /etc/claude \
-  && chmod 0555 /etc/codex /etc/claude \
+  && chown root:root /etc/agent \
+  && chmod 0555 /etc/agent \
   && chmod 2770 /run/patchdoll/providers \
   && chmod 0770 /patchdoll/agent \
   && chmod 2770 /workspace \
@@ -176,10 +176,8 @@ COPY --from=prod-deps --chown=patchdoll:patchdoll /app/node_modules /app/node_mo
 COPY --from=build --chown=patchdoll:patchdoll /app/packages /app/packages
 COPY --from=validation /validation-ok /tmp/patchdoll-validation-ok
 COPY --from=peercred --chown=root:root /patchdoll-peercred /usr/local/bin/patchdoll-peercred
-COPY --chown=root:root docker/codex/ /etc/codex/
-COPY --chown=root:root docker/claude/ /etc/claude/
-COPY --chown=root:root docker/skills/ /etc/codex/skills/
-COPY --chown=root:root docker/skills/ /etc/claude/skills/
+COPY --chown=root:root docker/agent/ /etc/agent/
+COPY --chown=root:root docker/skills/ /etc/agent/skills/
 COPY --chown=root:root docker/cont-init.d/ /etc/cont-init.d/
 COPY --chown=root:root docker/s6/scripts/ /etc/s6-overlay/scripts/
 COPY docker/s6/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
@@ -194,9 +192,9 @@ RUN rm -f /tmp/patchdoll-validation-ok \
   && claude_binary="/app/packages/provider-claude/node_modules/@anthropic-ai/claude-code-linux-${claude_arch}/claude" \
   && test -x "${claude_binary}" \
   && ln -sf "${claude_binary}" /usr/local/bin/claude \
-  && chmod 0444 /etc/codex/AGENTS.md /etc/claude/CLAUDE.md \
-  && find /etc/codex/skills /etc/claude/skills -type d -exec chmod 0555 {} + \
-  && find /etc/codex/skills /etc/claude/skills -type f -exec chmod 0444 {} + \
+  && chmod 0444 /etc/agent/AGENTS.md /etc/agent/CLAUDE.md \
+  && find /etc/agent/skills -type d -exec chmod 0555 {} + \
+  && find /etc/agent/skills -type f -exec chmod 0444 {} + \
   && chmod +x \
   /etc/cont-init.d/10-patchdoll-secrets \
   /etc/s6-overlay/s6-rc.d/claude-auth/auth.sh \
