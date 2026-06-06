@@ -8,6 +8,10 @@ const patchdollSocketPath = "/run/patchdoll/core.sock";
 const patchdollPath = "/webhooks/slack";
 const commandName = process.env.PATCHDOLL_SLACK_COMMAND || "/patchdoll";
 const maxSlackTextLength = 3900;
+// Cap for the single edited progress/draft message. Large enough for a live
+// token draft (DRAFT_TAIL_LIMIT in the Claude provider) plus its header, while
+// staying under Slack's per-message text limit.
+const maxProgressTextLength = 1600;
 const initialProgressText = "hmm?";
 const requestFailurePrefix = "That's annoying, but manageable";
 
@@ -409,9 +413,20 @@ function progressText(event) {
     return "";
   }
 
-  return event && event.message
-    ? String(event.message)
-    : "Patchdoll is working...";
+  if (!event || !event.message) {
+    return "Patchdoll is working...";
+  }
+
+  const metadata = event.metadata && typeof event.metadata === "object"
+    ? event.metadata
+    : {};
+  // Live token draft: prefix a header so the rolling text reads as an
+  // in-progress draft rather than a finished reply.
+  if (String(metadata.kind || "").toLowerCase() === "text_delta") {
+    return `✎ Claude is drafting…\n${String(event.message)}`;
+  }
+
+  return String(event.message);
 }
 
 function isLowSignalProgressEvent(event) {
@@ -438,7 +453,7 @@ function sanitizeProgressSlackText(text) {
     .replace(/[\u0000-\u001f\u007f]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
-    .slice(0, 300);
+    .slice(0, maxProgressTextLength);
 }
 
 function sanitizeFinalSlackText(text) {
