@@ -393,3 +393,39 @@ Patchdoll is a small set of pieces:
 
 The main rule: Codex can work inside the container, while Patchdoll owns the
 outside boundary.
+
+### Linting
+
+Install Node dependencies, then install the git hooks:
+
+```sh
+npm ci
+npm run prepare
+```
+
+Run all linters locally:
+
+```sh
+npm run lint
+```
+
+The lint suite covers:
+
+- TypeScript and JavaScript with ESLint
+- shell scripts with ShellCheck
+- Dockerfiles with hadolint
+- YAML with yamllint
+
+ShellCheck, hadolint, and yamllint are included in the Patchdoll runtime image.
+If you lint outside that image, install the same tools first, for example:
+
+```sh
+# Debian/Ubuntu
+sudo apt-get install shellcheck yamllint
+sudo curl -fsSLo /usr/local/bin/hadolint \
+  https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-Linux-x86_64
+sudo chmod 0755 /usr/local/bin/hadolint
+
+# macOS
+brew install shellcheck hadolint yamllint
+```
