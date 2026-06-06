@@ -6,6 +6,8 @@ import type {
   AiProvider,
   AiResult,
   JsonValue,
+  ProgressEvent,
+  ProgressSink,
   TaskContext
 } from "@patchdoll/core";
 import {
@@ -51,6 +53,7 @@ interface ClaudeInvocation {
   maxTurns: number;
   runtimeEnv: Record<string, string>;
   sessionId?: string;
+  progress?: ProgressSink;
 }
 
 interface ClaudeJsonResult {
@@ -155,7 +158,8 @@ export class ClaudeAiProvider implements AiProvider {
           permissionMode,
           maxTurns,
           runtimeEnv,
-          sessionId
+          sessionId,
+          progress: task.progress
         });
 
       try {
@@ -278,6 +282,12 @@ export class ClaudeAiProvider implements AiProvider {
       let stdout = "";
       let stderr = "";
       let settled = false;
+      let stdoutLineBuffer = "";
+      let lastResultLine = "";
+      const emitProgress = (event: ProgressEvent) => {
+        if (!invocation.progress) return;
+        Promise.resolve(invocation.progress(event)).catch(() => undefined);
+      };
 
       const timer = setTimeout(() => {
         if (settled) return;
@@ -293,6 +303,11 @@ export class ClaudeAiProvider implements AiProvider {
       child.stderr?.setEncoding("utf8");
       child.stdout?.on("data", (chunk: string) => {
         stdout = appendTail(stdout, chunk);
+        stdoutLineBuffer = parseClaudeStreamLines(
+          stdoutLineBuffer + chunk,
+          emitProgress,
+          (line) => { lastResultLine = line; }
+        );
         if (shouldLog("trace")) {
           writePatchdollLog("trace", "claude stdout", {
             chunk: truncateLogValue(chunk)
@@ -321,6 +336,12 @@ export class ClaudeAiProvider implements AiProvider {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        // Flush any partial line still in the buffer.
+        parseClaudeStreamLines(
+          stdoutLineBuffer + "\n",
+          emitProgress,
+          (line) => { lastResultLine = line; }
+        );
         if (code !== 0) {
           writePatchdollLog("warn", "claude exited with non-zero code", {
             code: code ?? null,
@@ -330,8 +351,11 @@ export class ClaudeAiProvider implements AiProvider {
           return;
         }
 
+        // With stream-json the result is the last `type: "result"` line;
+        // fall back to the full accumulated stdout to preserve old behaviour.
+        const rawResult = lastResultLine || stdout;
         try {
-          const parsed = JSON.parse(stdout) as ClaudeJsonResult;
+          const parsed = JSON.parse(rawResult) as ClaudeJsonResult;
           if (parsed.is_error) {
             writePatchdollLog("warn", "claude returned an error result", {
               subtype: parsed.subtype ?? null
@@ -351,7 +375,7 @@ export class ClaudeAiProvider implements AiProvider {
         } catch (error) {
           writePatchdollLog("warn", "claude returned invalid JSON", {
             error: messageOf(error),
-            stdout: truncateLogValue(tailForError(stdout))
+            stdout: truncateLogValue(tailForError(rawResult || stdout))
           });
           reject(new Error(`Claude Code returned invalid JSON: ${messageOf(error)}`));
         }
@@ -367,7 +391,7 @@ function claudeArgs(invocation: ClaudeInvocation): string[] {
     "-p",
     invocation.prompt,
     "--output-format",
-    "json",
+    "stream-json",
     "--model",
     invocation.model,
     "--effort",
@@ -513,4 +537,63 @@ function parseLogLevel(value: string | undefined): LogLevel {
     value
   }));
   return DEFAULT_LOG_LEVEL;
+}
+
+// Splits a line-buffered chunk from Claude's stream-json output. Calls
+// onResultLine for each `type:"result"` line (the final summary) and
+// emitProgress for each assistant turn that carries visible content.
+// Returns the unfinished tail of the buffer for the next call.
+function parseClaudeStreamLines(
+  buffer: string,
+  emitProgress: (event: ProgressEvent) => void,
+  onResultLine: (line: string) => void
+): string {
+  const lines = buffer.split(/\r?\n/);
+  const remainder = lines.pop() ?? "";
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let parsed: unknown;
+    try { parsed = JSON.parse(trimmed); } catch { continue; }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) continue;
+    const obj = parsed as Record<string, unknown>;
+    const type = typeof obj.type === "string" ? obj.type : undefined;
+    if (type === "result") { onResultLine(trimmed); continue; }
+    const event = claudeProgressEvent(obj, type);
+    if (event) emitProgress(event);
+  }
+  return remainder;
+}
+
+// Maps a single parsed stream-json object to a ProgressEvent when it carries
+// user-visible content. Only assistant turns with text or tool-use blocks are
+// surfaced; system and user-turn lines are silently skipped.
+function claudeProgressEvent(
+  obj: Record<string, unknown>,
+  type: string | undefined
+): ProgressEvent | undefined {
+  if (type !== "assistant") return undefined;
+  const msg = obj.message;
+  if (typeof msg !== "object" || msg === null) return undefined;
+  const content = (msg as Record<string, unknown>).content;
+  if (!Array.isArray(content)) return undefined;
+  for (const block of content) {
+    if (typeof block !== "object" || block === null) continue;
+    const b = block as Record<string, unknown>;
+    if (b.type === "text" && typeof b.text === "string" && b.text.trim()) {
+      return {
+        source: "claude",
+        message: b.text.slice(0, 200),
+        metadata: { kind: "text" }
+      };
+    }
+    if (b.type === "tool_use" && typeof b.name === "string") {
+      return {
+        source: "claude",
+        message: `Using tool: ${b.name}`,
+        metadata: { kind: "tool_use", tool: b.name }
+      };
+    }
+  }
+  return undefined;
 }
