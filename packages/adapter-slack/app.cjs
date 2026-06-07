@@ -74,7 +74,8 @@ app.event("app_mention", async ({ event, say, client }) => {
   const threadContext = await fetchSlackThreadContext(client, {
     channelId: event.channel,
     threadTs,
-    requestTs: event.ts
+    requestTs: event.ts,
+    channelType: event.channel_type
   });
   const initial = await say({
     text: initialProgressText,
@@ -128,7 +129,8 @@ app.message(async ({ message, say, client }) => {
   const threadContext = await fetchSlackThreadContext(client, {
     channelId: message.channel,
     threadTs,
-    requestTs: message.ts
+    requestTs: message.ts,
+    channelType: message.channel_type
   });
   const initial = await say({
     text: initialProgressText,
@@ -449,15 +451,6 @@ function normalizeSlackText(text) {
     .trim();
 }
 
-function truncateSlackText(text) {
-  const suffix = "\n\n[Progress truncated by Patchdoll before sending to Slack.]";
-  if (text.length <= maxSlackTextLength) {
-    return text;
-  }
-
-  return `${text.slice(0, maxSlackTextLength - suffix.length)}${suffix}`;
-}
-
 function splitSlackText(text) {
   const chunks = [];
   let remaining = text;
@@ -543,7 +536,7 @@ async function fetchSlackThreadContext(client, input) {
 
   const messages = [];
   let cursor;
-  let hasMore = false;
+  let hasMore;
 
   try {
     do {
@@ -572,16 +565,18 @@ async function fetchSlackThreadContext(client, input) {
       threadTs,
       requestTs: input.requestTs,
       messageCount: messages.length,
-      truncated: hasMore,
+      truncated: Boolean(hasMore),
       messages
     };
   } catch (error) {
-    const diagnostic = slackThreadFetchDiagnostic(error);
+    const diagnostic = slackThreadFetchDiagnostic(error, input);
     app.logger.warn({
       message: "slack thread transcript fetch failed",
       method: "conversations.replies",
       slackErrorCode: diagnostic.errorCode,
       reason: diagnostic.reason,
+      requiredScopes: diagnostic.requiredScopes,
+      providedScopes: diagnostic.providedScopes,
       channelId: redactSlackIdentifier(channelId),
       threadTs: redactSlackIdentifier(threadTs),
       requestTs: redactSlackIdentifier(input.requestTs),
@@ -594,17 +589,32 @@ async function fetchSlackThreadContext(client, input) {
       channelId,
       threadTs,
       reason: diagnostic.reason,
-      error: diagnostic.safeError
+      error: diagnostic.safeError,
+      requiredScopes: diagnostic.requiredScopes,
+      remediation: diagnostic.remediation
     };
   }
 }
 
-function slackThreadFetchDiagnostic(error) {
+function slackThreadFetchDiagnostic(error, input = {}) {
   const errorCode = slackApiErrorCode(error);
   const reason = slackThreadFailureReason(error, errorCode);
+  const requiredScopes = reason === "slack_missing_scope"
+    ? slackThreadRequiredScopes(error, input)
+    : undefined;
+  const providedScopes = reason === "slack_missing_scope"
+    ? slackErrorScopes(error && error.data && error.data.provided)
+    : undefined;
+  const remediation = reason === "slack_missing_scope"
+    ? "Add the required Bot Token Scope(s) in Slack OAuth & Permissions, reinstall the app to the workspace, then restart Patchdoll if the bot token changed."
+    : undefined;
+
   return {
     errorCode,
     reason,
+    requiredScopes,
+    providedScopes,
+    remediation,
     botChannelAccess: reason === "slack_channel_not_accessible"
       ? "denied_or_not_joined"
       : "unknown",
@@ -655,6 +665,64 @@ function slackThreadFailureReason(error, errorCode) {
   }
 
   return errorCode ? `slack_api_error:${errorCode}` : "slack_api_error:unknown";
+}
+
+function slackThreadRequiredScopes(error, input) {
+  const fromSlack = slackErrorScopes(error && error.data && error.data.needed);
+  if (fromSlack.length) {
+    return fromSlack;
+  }
+
+  const inferred = slackThreadScopesForChannel(
+    input && input.channelId,
+    input && input.channelType
+  );
+  return inferred.length ? inferred : [
+    "channels:history",
+    "groups:history",
+    "im:history",
+    "mpim:history"
+  ];
+}
+
+function slackThreadScopesForChannel(channelId, channelType) {
+  const type = String(channelType || "").toLowerCase();
+  if (["channel", "public_channel", "public"].includes(type)) {
+    return ["channels:history"];
+  }
+  if (["group", "private_channel", "private"].includes(type)) {
+    return ["groups:history"];
+  }
+  if (type === "im") {
+    return ["im:history"];
+  }
+  if (type === "mpim") {
+    return ["mpim:history"];
+  }
+
+  const id = String(channelId || "");
+  if (id.startsWith("C")) {
+    return ["channels:history"];
+  }
+  if (id.startsWith("D")) {
+    return ["im:history"];
+  }
+  if (id.startsWith("G")) {
+    return ["groups:history", "mpim:history"];
+  }
+
+  return [];
+}
+
+function slackErrorScopes(value) {
+  const raw = Array.isArray(value)
+    ? value
+    : String(value || "").split(",");
+  return [...new Set(
+    raw
+      .map((scope) => String(scope || "").trim())
+      .filter(Boolean)
+  )];
 }
 
 function slackApiErrorCode(error) {

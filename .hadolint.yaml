@@ -1,0 +1,6 @@
+---
+ignored:
+  # Debian package versions are inherited from the selected base image/apt
+  # snapshot. Release builds should pin the base image digest instead of
+  # pinning every transient package revision in the Dockerfile.
+  - DL3008

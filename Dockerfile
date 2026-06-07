@@ -7,6 +7,9 @@ ARG NODE_RUNTIME_IMAGE=node:24-bookworm
 ARG SAFE_CHAIN_VERSION=1.5.2
 ARG SAFE_CHAIN_INSTALL_DIR=/usr/local/.safe-chain
 ARG S6_OVERLAY_VERSION=3.2.1.0
+ARG HADOLINT_VERSION=2.14.0
+ARG HADOLINT_SHA256_AMD64=6bf226944684f56c84dd014e8b979d27425c0148f61b3bd99bcc6f39e9dc5a47
+ARG HADOLINT_SHA256_ARM64=331f1d3511b84a4f1e3d18d52fec284723e4019552f4f47b19322a53ce9a40ed
 
 FROM ${NODE_BUILD_IMAGE} AS safe-chain
 
@@ -76,12 +79,12 @@ RUN set -eux; \
   apt-get install -y --no-install-recommends python3-yaml; \
   rm -rf /var/lib/apt/lists/*
 
-COPY docker/agent/skills ./docker/agent/skills
+COPY docker/skills ./docker/skills
 
 RUN python3 -c $'from pathlib import Path\n\
 import yaml\n\
 \n\
-for skill in Path("docker/agent/skills").glob("*/SKILL.md"):\n\
+for skill in Path("docker/skills").glob("*/SKILL.md"):\n\
     text = skill.read_text(encoding="utf-8")\n\
     if not text.startswith("---\\n"):\n\
         raise SystemExit(f"{skill}: missing YAML frontmatter")\n\
@@ -96,6 +99,9 @@ Path("/validation-ok").write_text("ok\\n", encoding="utf-8")'
 FROM ${NODE_RUNTIME_IMAGE} AS runtime
 
 ARG S6_OVERLAY_VERSION
+ARG HADOLINT_VERSION
+ARG HADOLINT_SHA256_AMD64
+ARG HADOLINT_SHA256_ARM64
 ARG TARGETARCH
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -121,12 +127,23 @@ RUN set -eux; \
     > /etc/apt/sources.list.d/ngrok.list; \
   apt-get update; \
   apt-get install -y --no-install-recommends \
-    ca-certificates gawk git gh grep ngrok jq \
+    ca-certificates gawk git gh grep ngrok jq shellcheck yamllint \
     podman podman-docker buildah skopeo crun \
     fuse-overlayfs slirp4netns uidmap; \
   rm -rf /var/lib/apt/lists/*; \
   : "podman-docker drops a docker(1) shim; silence its 'Emulate Docker CLI' notice"; \
   touch /etc/containers/nodocker
+
+RUN set -eux; \
+  case "${TARGETARCH:-amd64}" in \
+    amd64) hadolint_arch="x86_64"; hadolint_sha256="${HADOLINT_SHA256_AMD64}" ;; \
+    arm64) hadolint_arch="arm64"; hadolint_sha256="${HADOLINT_SHA256_ARM64}" ;; \
+    *) echo "Unsupported TARGETARCH for hadolint: ${TARGETARCH:-unset}" >&2; exit 1 ;; \
+  esac; \
+  curl -fsSLo /usr/local/bin/hadolint \
+    "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-Linux-${hadolint_arch}"; \
+  echo "${hadolint_sha256}  /usr/local/bin/hadolint" | sha256sum -c -; \
+  chmod 0755 /usr/local/bin/hadolint
 
 ENV PATH="/app/node_modules/.bin:${PATH}" \
   NODE_ENV=production \
@@ -177,6 +194,7 @@ COPY --from=build --chown=patchdoll:patchdoll /app/packages /app/packages
 COPY --from=validation /validation-ok /tmp/patchdoll-validation-ok
 COPY --from=peercred --chown=root:root /patchdoll-peercred /usr/local/bin/patchdoll-peercred
 COPY --chown=root:root docker/agent/ /etc/agent/
+COPY --chown=root:root docker/skills/ /etc/agent/skills/
 COPY --chown=root:root docker/cont-init.d/ /etc/cont-init.d/
 COPY --chown=root:root docker/s6/scripts/ /etc/s6-overlay/scripts/
 COPY docker/s6/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
@@ -191,7 +209,7 @@ RUN rm -f /tmp/patchdoll-validation-ok \
   && claude_binary="/app/packages/provider-claude/node_modules/@anthropic-ai/claude-code-linux-${claude_arch}/claude" \
   && test -x "${claude_binary}" \
   && ln -sf "${claude_binary}" /usr/local/bin/claude \
-  && chmod 0444 /etc/agent/AGENTS.md \
+  && chmod 0444 /etc/agent/AGENTS.md /etc/agent/CLAUDE.md \
   && find /etc/agent/skills -type d -exec chmod 0555 {} + \
   && find /etc/agent/skills -type f -exec chmod 0444 {} + \
   && chmod +x \

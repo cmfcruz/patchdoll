@@ -25,7 +25,7 @@ import {
 } from "@patchdoll/core/settings";
 
 const CLAUDE_HOME = "/patchdoll/agent";
-const MODEL_INSTRUCTIONS_FILE = "/etc/agent/AGENTS.md";
+const MODEL_INSTRUCTIONS_FILE = "/etc/agent/CLAUDE.md";
 const STATE_DIR = "/patchdoll/state";
 const PATCHDOLL_WORKDIR = "/workspace";
 const MAX_CAPTURED_OUTPUT_BYTES = 256000;
@@ -190,7 +190,9 @@ export class ClaudeAiProvider implements AiProvider {
             // Surface the escape hatch: we kept the session (right call), but if
             // it's actually a dead-session failure we don't recognize, an admin
             // can recover with `reset thread`.
-            throw new Error(`${messageOf(error)}\n\n${RESET_THREAD_HINT}`);
+            throw new Error(`${messageOf(error)}\n\n${RESET_THREAD_HINT}`, {
+              cause: error
+            });
           }
           throw error;
         }
