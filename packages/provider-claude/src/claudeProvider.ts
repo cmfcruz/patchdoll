@@ -6,6 +6,8 @@ import type {
   AiProvider,
   AiResult,
   JsonValue,
+  ProgressEvent,
+  ProgressSink,
   TaskContext
 } from "@patchdoll/core";
 import {
@@ -52,6 +54,7 @@ interface ClaudeInvocation {
   memoryEnabled: boolean;
   runtimeEnv: Record<string, string>;
   sessionId?: string;
+  progress?: ProgressSink;
 }
 
 interface ClaudeJsonResult {
@@ -158,7 +161,8 @@ export class ClaudeAiProvider implements AiProvider {
           maxTurns,
           memoryEnabled,
           runtimeEnv,
-          sessionId
+          sessionId,
+          progress: task.progress
         });
 
       try {
@@ -284,6 +288,15 @@ export class ClaudeAiProvider implements AiProvider {
       let stdout = "";
       let stderr = "";
       let settled = false;
+      let lastResultLine = "";
+      const emitProgress = (event: ProgressEvent) => {
+        if (!invocation.progress) return;
+        Promise.resolve(invocation.progress(event)).catch(() => undefined);
+      };
+      const streamParser = createClaudeStreamParser({
+        onProgress: emitProgress,
+        onResultLine: (line) => { lastResultLine = line; }
+      });
 
       const timer = setTimeout(() => {
         if (settled) return;
@@ -299,6 +312,7 @@ export class ClaudeAiProvider implements AiProvider {
       child.stderr?.setEncoding("utf8");
       child.stdout?.on("data", (chunk: string) => {
         stdout = appendTail(stdout, chunk);
+        streamParser.push(chunk);
         if (shouldLog("trace")) {
           writePatchdollLog("trace", "claude stdout", {
             chunk: truncateLogValue(chunk)
@@ -327,6 +341,8 @@ export class ClaudeAiProvider implements AiProvider {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        // Flush any partial line still in the buffer.
+        streamParser.flush();
         if (code !== 0) {
           writePatchdollLog("warn", "claude exited with non-zero code", {
             code: code ?? null,
@@ -336,8 +352,11 @@ export class ClaudeAiProvider implements AiProvider {
           return;
         }
 
+        // With stream-json the result is the last `type: "result"` line;
+        // fall back to the full accumulated stdout to preserve old behaviour.
+        const rawResult = lastResultLine || stdout;
         try {
-          const parsed = JSON.parse(stdout) as ClaudeJsonResult;
+          const parsed = JSON.parse(rawResult) as ClaudeJsonResult;
           if (parsed.is_error) {
             writePatchdollLog("warn", "claude returned an error result", {
               subtype: parsed.subtype ?? null
@@ -357,7 +376,7 @@ export class ClaudeAiProvider implements AiProvider {
         } catch (error) {
           writePatchdollLog("warn", "claude returned invalid JSON", {
             error: messageOf(error),
-            stdout: truncateLogValue(tailForError(stdout))
+            stdout: truncateLogValue(tailForError(rawResult || stdout))
           });
           reject(new Error(`Claude Code returned invalid JSON: ${messageOf(error)}`));
         }
@@ -373,7 +392,12 @@ function claudeArgs(invocation: ClaudeInvocation): string[] {
     "-p",
     invocation.prompt,
     "--output-format",
-    "json",
+    "stream-json",
+    // Token-level streaming: --verbose unlocks partial-message events and
+    // --include-partial-messages emits the `stream_event` text deltas we parse
+    // into a live Slack draft. Without both, only milestone events arrive.
+    "--verbose",
+    "--include-partial-messages",
     "--model",
     invocation.model,
     "--effort",
@@ -536,4 +560,129 @@ function parseLogLevel(value: string | undefined): LogLevel {
     value
   }));
   return DEFAULT_LOG_LEVEL;
+}
+
+// Longest run of accumulated draft text we forward per progress update. The
+// Slack adapter shows the tail in one edited message, so the most recent text
+// is what matters; older text scrolls off rather than being clipped from the
+// front by Slack's own limit.
+const DRAFT_TAIL_LIMIT = 1500;
+// Single full-message text snippet cap (the non-streaming fallback path).
+const TEXT_SNIPPET_LIMIT = 200;
+
+export interface ClaudeStreamHandlers {
+  onProgress: (event: ProgressEvent) => void;
+  onResultLine: (line: string) => void;
+}
+
+export interface ClaudeStreamParser {
+  push(chunk: string): void;
+  flush(): void;
+}
+
+// Stateful, line-buffered parser for Claude's `stream-json` output. It handles
+// three concerns across chunk boundaries:
+//   1. The final `type:"result"` line → onResultLine (unchanged behaviour).
+//   2. `type:"stream_event"` token deltas (from --include-partial-messages) →
+//      accumulated into a live draft and emitted as cumulative progress.
+//   3. `type:"assistant"` messages → tool-use status, plus a text fallback for
+//      when partial messages aren't available.
+// Only *visible* text is streamed: `text_delta` blocks. Hidden reasoning
+// (`thinking_delta`) and tool-input JSON (`input_json_delta`) are skipped.
+export function createClaudeStreamParser(
+  handlers: ClaudeStreamHandlers
+): ClaudeStreamParser {
+  let lineBuffer = "";
+  let draft = "";
+  // Once we've streamed any delta for the current message we suppress that
+  // message's consolidated `assistant` text block, so the live draft isn't
+  // clobbered by a stale 200-char snippet.
+  let sawDeltaThisMessage = false;
+
+  function consumeLine(line: string): void {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    let parsed: unknown;
+    try { parsed = JSON.parse(trimmed); } catch { return; }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return;
+    const obj = parsed as Record<string, unknown>;
+    const type = typeof obj.type === "string" ? obj.type : undefined;
+    if (type === "result") { handlers.onResultLine(trimmed); return; }
+    if (type === "stream_event") { handleStreamEvent(obj.event); return; }
+    if (type === "assistant") { handleAssistant(obj); return; }
+    // system / user lines carry no user-visible content.
+  }
+
+  function handleStreamEvent(event: unknown): void {
+    if (typeof event !== "object" || event === null) return;
+    const e = event as Record<string, unknown>;
+    const eventType = typeof e.type === "string" ? e.type : undefined;
+    if (eventType === "message_start") {
+      // A new assistant turn (e.g. after a tool call): reset the draft.
+      draft = "";
+      sawDeltaThisMessage = false;
+      return;
+    }
+    if (eventType !== "content_block_delta") return;
+    const delta = e.delta;
+    if (typeof delta !== "object" || delta === null) return;
+    const d = delta as Record<string, unknown>;
+    if (d.type !== "text_delta") return; // skip thinking / tool-input deltas
+    if (typeof d.text !== "string" || !d.text) return;
+    draft += d.text;
+    sawDeltaThisMessage = true;
+    handlers.onProgress({
+      source: "claude",
+      message: draftTail(draft),
+      metadata: { kind: "text_delta" }
+    });
+  }
+
+  function handleAssistant(obj: Record<string, unknown>): void {
+    const msg = obj.message;
+    if (typeof msg !== "object" || msg === null) return;
+    const content = (msg as Record<string, unknown>).content;
+    if (!Array.isArray(content)) return;
+    for (const block of content) {
+      if (typeof block !== "object" || block === null) continue;
+      const b = block as Record<string, unknown>;
+      if (b.type === "tool_use" && typeof b.name === "string") {
+        handlers.onProgress({
+          source: "claude",
+          message: `Using tool: ${b.name}`,
+          metadata: { kind: "tool_use", tool: b.name }
+        });
+        continue;
+      }
+      if (b.type === "text" && typeof b.text === "string" && b.text.trim()) {
+        // Already streamed live via deltas — don't overwrite the draft.
+        if (sawDeltaThisMessage) continue;
+        handlers.onProgress({
+          source: "claude",
+          message: b.text.slice(0, TEXT_SNIPPET_LIMIT),
+          metadata: { kind: "text" }
+        });
+      }
+    }
+  }
+
+  return {
+    push(chunk: string): void {
+      lineBuffer += chunk;
+      const lines = lineBuffer.split(/\r?\n/);
+      lineBuffer = lines.pop() ?? "";
+      for (const line of lines) consumeLine(line);
+    },
+    flush(): void {
+      if (lineBuffer.trim()) consumeLine(lineBuffer);
+      lineBuffer = "";
+    }
+  };
+}
+
+// Returns the trailing slice of the accumulated draft so the live Slack message
+// tracks the most recent text once the draft outgrows the limit.
+function draftTail(text: string): string {
+  if (text.length <= DRAFT_TAIL_LIMIT) return text;
+  return `…${text.slice(text.length - DRAFT_TAIL_LIMIT)}`;
 }
