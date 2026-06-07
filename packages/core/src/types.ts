@@ -90,8 +90,16 @@ export interface RunResult {
   executed: ActionExecutionResult[];
 }
 
+// Who emitted a progress line. One literal per AI provider that narrates its
+// own work ("codex", "claude"), plus "runner" for status the core harness
+// emits itself (e.g. the initial ack), separate from any model. This is a
+// closed set on purpose: a new provider registers its name here in one line,
+// which keeps the type honest and greppable rather than silently accepting any
+// string.
+export type ProgressSource = "codex" | "claude" | "runner";
+
 export interface ProgressEvent {
-  source: "codex" | "runner" | (string & {});
+  source: ProgressSource;
   message: string;
   metadata?: Record<string, JsonValue>;
 }
