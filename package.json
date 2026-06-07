@@ -13,13 +13,35 @@
     "check": "tsc -b",
     "test": "tsc -b && node --test \"packages/*/test/*.test.ts\"",
     "patchdoll:build": "docker build -t patchdoll:latest .",
-    "patchdoll:stop": "docker stop --timeout 15 patchdoll"
+    "patchdoll:stop": "docker stop --timeout 15 patchdoll",
+    "prepare": "husky",
+    "lint": "npm run lint:eslint && npm run lint:shell && npm run lint:docker && npm run lint:yaml",
+    "lint:eslint": "eslint . --max-warnings=0",
+    "lint:shell": "tools/lint-shell.sh",
+    "lint:docker": "tools/lint-dockerfiles.sh",
+    "lint:yaml": "tools/lint-yaml.sh",
+    "lint:staged": "lint-staged"
   },
   "engines": {
     "node": ">=24"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "24.10.1",
-    "typescript": "5.9.3"
+    "eslint": "^10.4.1",
+    "globals": "^17.6.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.7",
+    "typescript": "5.9.3",
+    "typescript-eslint": "^8.60.1"
+  },
+  "lint-staged": {
+    "*.{js,cjs,mjs,ts}": "eslint --max-warnings=0",
+    "*.{sh,bash}": "tools/lint-shell.sh",
+    "docker/cont-init.d/*": "tools/lint-shell.sh",
+    "docker/s6/s6-rc.d/**/{run,up,*.sh}": "tools/lint-shell.sh",
+    "docker/s6/scripts/*": "tools/lint-shell.sh",
+    "Dockerfile*": "tools/lint-dockerfiles.sh",
+    "*.{yml,yaml}": "tools/lint-yaml.sh"
   }
 }

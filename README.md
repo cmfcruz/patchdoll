@@ -303,7 +303,24 @@ patchdollctl settings set claude.model sonnet
 patchdollctl settings set claude.effort high
 patchdollctl settings set claude.permissionMode default
 patchdollctl settings set claude.maxTurns 0
+patchdollctl settings set ai.memoryEnabled false
 ```
+
+`ai.memoryEnabled` is a provider-neutral override for the AI agent's
+cross-thread memory. Flip it at runtime via `patchdollctl` or, for listed
+admins, from Slack — no rebuild needed.
+
+**By default the setting is unset, and that is intentional: each provider keeps
+its own native memory default.** Codex ships with memory *off*; Claude Code
+ships with memory *on*. We deliberately do not unify these out of the box so
+that people already familiar with either tool are not surprised by a change in
+how the agent behaves. Setting the value explicitly overrides both providers:
+
+- `ai.memoryEnabled` unset → native defaults (Codex off, Claude on).
+- `ai.memoryEnabled false` → memory off everywhere. Claude Code runs with
+  `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`; Codex keeps its default-off behavior.
+- `ai.memoryEnabled true` → memory on everywhere. Codex runs with
+  `features.memories=true`; Claude Code keeps its default-on behavior.
 
 ### Let Slack admins change Patchdoll settings
 
@@ -393,3 +410,39 @@ Patchdoll is a small set of pieces:
 
 The main rule: Codex can work inside the container, while Patchdoll owns the
 outside boundary.
+
+### Linting
+
+Install Node dependencies, then install the git hooks:
+
+```sh
+npm ci
+npm run prepare
+```
+
+Run all linters locally:
+
+```sh
+npm run lint
+```
+
+The lint suite covers:
+
+- TypeScript and JavaScript with ESLint
+- shell scripts with ShellCheck
+- Dockerfiles with hadolint
+- YAML with yamllint
+
+ShellCheck, hadolint, and yamllint are included in the Patchdoll runtime image.
+If you lint outside that image, install the same tools first, for example:
+
+```sh
+# Debian/Ubuntu
+sudo apt-get install shellcheck yamllint
+sudo curl -fsSLo /usr/local/bin/hadolint \
+  https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-Linux-x86_64
+sudo chmod 0755 /usr/local/bin/hadolint
+
+# macOS
+brew install shellcheck hadolint yamllint
+```
