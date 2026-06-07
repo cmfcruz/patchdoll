@@ -75,6 +75,7 @@ interface CodexInvocation {
   model: string;
   reasoningEffort: string;
   fastMode: boolean;
+  memoryEnabled: boolean;
   bypassSandboxAndApprovals: boolean;
   env?: Record<string, string>;
   sessionId?: string;
@@ -122,6 +123,7 @@ export class CodexAiProvider implements AiProvider {
     const model = codexModel();
     const reasoningEffort = codexReasoningEffort();
     const fastMode = codexFastMode();
+    const memoryEnabled = aiMemoryEnabled();
 
     await mkdir(this.stateDir, { recursive: true, mode: 0o700 });
     await mkdir(codexHome, { recursive: true, mode: 0o700 });
@@ -179,6 +181,7 @@ export class CodexAiProvider implements AiProvider {
           model,
           reasoningEffort,
           fastMode,
+          memoryEnabled,
           bypassSandboxAndApprovals: this.bypassSandboxAndApprovals,
           env: runtimeEnv,
           sessionId,
@@ -280,6 +283,7 @@ export class CodexAiProvider implements AiProvider {
         model,
         reasoningEffort,
         fastMode,
+        memoryEnabled,
         resumed: Boolean(existing),
         threadKey,
         sessionPersisted: Boolean(sessionId)
@@ -723,6 +727,12 @@ function codexArgs(invocation: CodexInvocation): string[] {
     `model_reasoning_effort="${invocation.reasoningEffort}"`
   );
 
+  // Codex memories are off by default; opt in per-invocation via config so the
+  // toggle applies to fresh runs and `exec resume` alike.
+  if (invocation.memoryEnabled) {
+    args.push("--config", "features.memories=true");
+  }
+
   if (invocation.fastMode) {
     args.push("--config", 'service_tier="priority"');
   }
@@ -933,6 +943,15 @@ function codexReasoningEffort(): string {
 
 function codexFastMode(): boolean {
   return booleanSetting("codex.fastMode") ?? DEFAULT_SETTINGS["codex.fastMode"];
+}
+
+// Codex's native default is memories OFF. The shared `ai.memoryEnabled` setting
+// is an optional override: when unset, we preserve that native default so Codex
+// users see no surprise change in behavior.
+const CODEX_NATIVE_MEMORY_ENABLED = false;
+
+function aiMemoryEnabled(): boolean {
+  return booleanSetting("ai.memoryEnabled") ?? CODEX_NATIVE_MEMORY_ENABLED;
 }
 
 function stringSetting(key: string): string | undefined {

@@ -49,6 +49,7 @@ interface ClaudeInvocation {
   effort: string;
   permissionMode: string;
   maxTurns: number;
+  memoryEnabled: boolean;
   runtimeEnv: Record<string, string>;
   sessionId?: string;
 }
@@ -102,6 +103,7 @@ export class ClaudeAiProvider implements AiProvider {
     const effort = claudeEffort();
     const permissionMode = claudePermissionMode();
     const maxTurns = claudeMaxTurns();
+    const memoryEnabled = aiMemoryEnabled();
     const threadKey = patchdollThreadKey(task);
     const stateDbPath = join(this.stateDir, "patchdoll.sqlite");
     const store = openClaudeThreadStore(stateDbPath);
@@ -154,6 +156,7 @@ export class ClaudeAiProvider implements AiProvider {
           effort,
           permissionMode,
           maxTurns,
+          memoryEnabled,
           runtimeEnv,
           sessionId
         });
@@ -235,6 +238,7 @@ export class ClaudeAiProvider implements AiProvider {
       effort,
       permissionMode,
       maxTurns,
+      memoryEnabled,
       threadKey,
       resumed: Boolean(existing),
       sessionPersisted: Boolean(sessionId)
@@ -275,7 +279,7 @@ export class ClaudeAiProvider implements AiProvider {
       const child = spawn(this.claudeBin, claudeArgs(invocation), {
         cwd: invocation.workdir,
         stdio: ["ignore", "pipe", "pipe"],
-        env: buildClaudeEnv(invocation.runtimeEnv)
+        env: buildClaudeEnv(invocation.runtimeEnv, invocation.memoryEnabled)
       });
       let stdout = "";
       let stderr = "";
@@ -387,7 +391,8 @@ function claudeArgs(invocation: ClaudeInvocation): string[] {
 }
 
 function buildClaudeEnv(
-  runtimeEnv: Record<string, string> = {}
+  runtimeEnv: Record<string, string> = {},
+  memoryEnabled = true
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     PATH: process.env.PATH,
@@ -399,6 +404,12 @@ function buildClaudeEnv(
     LC_ALL: process.env.LC_ALL,
     LC_CTYPE: process.env.LC_CTYPE
   };
+  // Claude Code auto-memory is on by default; the only way to turn it off is
+  // this env var. When the toggle is enabled we leave it unset so the default
+  // (memory on) applies.
+  if (!memoryEnabled) {
+    env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = "1";
+  }
   if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
     env.CLAUDE_CODE_OAUTH_TOKEN = process.env.CLAUDE_CODE_OAUTH_TOKEN;
   }
@@ -435,6 +446,16 @@ function claudePermissionMode(): string {
 function claudeMaxTurns(): number {
   const value = setting("claude.maxTurns", DEFAULT_SETTINGS["claude.maxTurns"]);
   return typeof value === "number" ? value : DEFAULT_SETTINGS["claude.maxTurns"];
+}
+
+// Claude Code's native default is auto-memory ON. The shared `ai.memoryEnabled`
+// setting is an optional override: when unset, we preserve that native default
+// so Claude users see no surprise change in behavior.
+const CLAUDE_NATIVE_MEMORY_ENABLED = true;
+
+function aiMemoryEnabled(): boolean {
+  const value = setting("ai.memoryEnabled", CLAUDE_NATIVE_MEMORY_ENABLED);
+  return typeof value === "boolean" ? value : CLAUDE_NATIVE_MEMORY_ENABLED;
 }
 
 function setting(key: string, fallback: JsonValue): JsonValue {
