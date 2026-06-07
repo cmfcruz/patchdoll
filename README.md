@@ -433,16 +433,10 @@ The lint suite covers:
 - Dockerfiles with hadolint
 - YAML with yamllint
 
-ShellCheck, hadolint, and yamllint are included in the Patchdoll runtime image.
-If you lint outside that image, install the same tools first, for example:
+ShellCheck, hadolint, and yamllint are included in the Patchdoll runtime image
+so agents can lint a mounted checkout from inside the container. If you lint
+outside that image, install these tools using your preferred package manager:
 
-```sh
-# Debian/Ubuntu
-sudo apt-get install shellcheck yamllint
-sudo curl -fsSLo /usr/local/bin/hadolint \
-  https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-Linux-x86_64
-sudo chmod 0755 /usr/local/bin/hadolint
-
-# macOS
-brew install shellcheck hadolint yamllint
-```
+- ShellCheck
+- hadolint
+- yamllint
