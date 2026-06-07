@@ -36,11 +36,4 @@ done
 
 [ "${#files[@]}" -gt 0 ] || exit 0
 
-shellcheck -x \
-  -P docker/cont-init.d \
-  -P docker/s6/s6-rc.d/claude-auth \
-  -P docker/s6/s6-rc.d/claude-worker \
-  -P docker/s6/s6-rc.d/codex-auth \
-  -P docker/s6/s6-rc.d/codex-worker \
-  -P docker/s6/s6-rc.d/slack-bridge \
-  "${files[@]}"
+shellcheck -x -P SCRIPTDIR "${files[@]}"
