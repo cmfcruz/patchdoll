@@ -451,15 +451,6 @@ function normalizeSlackText(text) {
     .trim();
 }
 
-function truncateSlackText(text) {
-  const suffix = "\n\n[Progress truncated by Patchdoll before sending to Slack.]";
-  if (text.length <= maxSlackTextLength) {
-    return text;
-  }
-
-  return `${text.slice(0, maxSlackTextLength - suffix.length)}${suffix}`;
-}
-
 function splitSlackText(text) {
   const chunks = [];
   let remaining = text;
@@ -545,7 +536,7 @@ async function fetchSlackThreadContext(client, input) {
 
   const messages = [];
   let cursor;
-  let hasMore = false;
+  let hasMore;
 
   try {
     do {
@@ -574,7 +565,7 @@ async function fetchSlackThreadContext(client, input) {
       threadTs,
       requestTs: input.requestTs,
       messageCount: messages.length,
-      truncated: hasMore,
+      truncated: Boolean(hasMore),
       messages
     };
   } catch (error) {

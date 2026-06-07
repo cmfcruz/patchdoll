@@ -187,7 +187,9 @@ export class ClaudeAiProvider implements AiProvider {
             // Surface the escape hatch: we kept the session (right call), but if
             // it's actually a dead-session failure we don't recognize, an admin
             // can recover with `reset thread`.
-            throw new Error(`${messageOf(error)}\n\n${RESET_THREAD_HINT}`);
+            throw new Error(`${messageOf(error)}\n\n${RESET_THREAD_HINT}`, {
+              cause: error
+            });
           }
           throw error;
         }
