@@ -83,7 +83,9 @@ test("surfaces tool_use from the consolidated assistant message", () => {
   }) + "\n");
 
   assert.equal(captured.progress.length, 1);
-  assert.equal(captured.progress[0].message, "Using tool: Read");
+  // Tool activity is described via the shared @patchdoll/core vocabulary so
+  // Claude and Codex read identically (see issue #45).
+  assert.equal(captured.progress[0].message, "Reading the code.");
   assert.equal(captured.progress[0].kind, "tool_use");
   assert.equal(captured.progress[0].tool, "Read");
 });

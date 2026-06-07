@@ -18,7 +18,9 @@ import {
   isResetThreadCommand,
   patchdollThreadKey,
   RESET_THREAD_HINT,
-  stringifyLogJson
+  stringifyLogJson,
+  summarizeProgressText,
+  toolActivityMessage
 } from "@patchdoll/core";
 import {
   CLAUDE_EFFORTS,
@@ -567,8 +569,6 @@ function parseLogLevel(value: string | undefined): LogLevel {
 // is what matters; older text scrolls off rather than being clipped from the
 // front by Slack's own limit.
 const DRAFT_TAIL_LIMIT = 1500;
-// Single full-message text snippet cap (the non-streaming fallback path).
-const TEXT_SNIPPET_LIMIT = 200;
 
 export interface ClaudeStreamHandlers {
   onProgress: (event: ProgressEvent) => void;
@@ -649,7 +649,7 @@ export function createClaudeStreamParser(
       if (b.type === "tool_use" && typeof b.name === "string") {
         handlers.onProgress({
           source: "claude",
-          message: `Using tool: ${b.name}`,
+          message: toolActivityMessage(b.name),
           metadata: { kind: "tool_use", tool: b.name }
         });
         continue;
@@ -657,9 +657,11 @@ export function createClaudeStreamParser(
       if (b.type === "text" && typeof b.text === "string" && b.text.trim()) {
         // Already streamed live via deltas — don't overwrite the draft.
         if (sawDeltaThisMessage) continue;
+        const message = summarizeProgressText(b.text);
+        if (!message) continue;
         handlers.onProgress({
           source: "claude",
-          message: b.text.slice(0, TEXT_SNIPPET_LIMIT),
+          message,
           metadata: { kind: "text" }
         });
       }

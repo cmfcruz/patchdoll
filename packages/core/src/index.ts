@@ -13,6 +13,7 @@ export * from "./secrets.js";
 export * from "./slackNotify.js";
 export * from "./types.js";
 export * from "./settings.js";
+export * from "./progressSummary.js";
 export * from "./prompt.js";
 export * from "./proposedActions.js";
 export * from "./providerWorker.js";
