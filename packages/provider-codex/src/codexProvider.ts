@@ -26,7 +26,9 @@ import {
   isResetThreadCommand,
   patchdollThreadKey,
   RESET_THREAD_HINT,
-  stringifyLogJson
+  stringifyLogJson,
+  summarizeProgressText,
+  toolActivityMessage
 } from "@patchdoll/core";
 import {
   CODEX_REASONING_EFFORTS,
@@ -62,8 +64,10 @@ const LOG_LEVEL_ORDER: Record<LogLevel, number> = {
 const DEFAULT_LOG_LEVEL: LogLevel = "info";
 const MAX_LOG_VALUE_LENGTH = 4000;
 const PATCHDOLL_LOG_LEVEL = parseLogLevel(process.env.PATCHDOLL_LOG_LEVEL);
-const STATUS_CHECKING = "Checking that now.";
-const STATUS_EDITING = "I'm cleaning that up.";
+// Lifecycle markers Codex emits that Claude has no direct equivalent for; kept
+// so a long run doesn't go silent between agent messages. Tool activity and
+// agent narration are summarized through the shared helpers in @patchdoll/core
+// so both providers describe the same work with the same words.
 const STATUS_STARTED = "I'm on it.";
 const STATUS_STEP_DONE = "Done with that step.";
 
@@ -515,7 +519,7 @@ function rawCodexProgressEvent(line: string): ProgressEvent | undefined {
   };
 }
 
-function summarizedCodexProgressEvent(
+export function summarizedCodexProgressEvent(
   line: string
 ): ProgressEvent | undefined {
   let parsed: unknown;
@@ -556,8 +560,8 @@ function summarizedCodexProgressEvent(
 function progressFromAgentMessage(
   payload: Record<string, JsonValue>
 ): ProgressEvent | undefined {
-  const message = jsonString(payload.message);
   const phase = jsonString(payload.phase);
+  const message = summarizeProgressText(jsonString(payload.message));
   if (!message || phase === "final_answer") {
     return undefined;
   }
@@ -588,7 +592,7 @@ function findAgentMessage(value: JsonValue): ProgressEvent | undefined {
     return progressFromAgentMessage(value);
   }
 
-  const direct = jsonString(value.agent_message);
+  const direct = summarizeProgressText(jsonString(value.agent_message));
   if (direct) {
     return {
       source: "codex",
@@ -619,25 +623,9 @@ function progressFromFunctionCall(
     return undefined;
   }
 
-  if (name === "exec_command") {
-    return {
-      source: "codex",
-      message: STATUS_CHECKING,
-      metadata: { kind: "function_call", tool: name }
-    };
-  }
-
-  if (name === "apply_patch") {
-    return {
-      source: "codex",
-      message: STATUS_EDITING,
-      metadata: { kind: "function_call", tool: name }
-    };
-  }
-
   return {
     source: "codex",
-    message: STATUS_CHECKING,
+    message: toolActivityMessage(name),
     metadata: { kind: "function_call", tool: name }
   };
 }
@@ -680,14 +668,14 @@ function progressFromCodexEvent(
   if (envelopeType === "response_item" && payloadType) {
     return {
       source: "codex",
-      message: STATUS_CHECKING,
+      message: toolActivityMessage(undefined),
       metadata: { kind }
     };
   }
 
   return {
     source: "codex",
-    message: STATUS_CHECKING,
+    message: toolActivityMessage(undefined),
     metadata: { kind }
   };
 }
