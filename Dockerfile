@@ -214,6 +214,7 @@ RUN rm -f /tmp/patchdoll-validation-ok \
   && find /etc/agent/skills -type f -exec chmod 0444 {} + \
   && chmod +x \
   /etc/cont-init.d/10-patchdoll-secrets \
+  /etc/cont-init.d/20-patchdoll-settings-sync \
   /etc/s6-overlay/s6-rc.d/claude-auth/auth.sh \
   /etc/s6-overlay/s6-rc.d/claude-auth/up \
   /etc/s6-overlay/s6-rc.d/claude-worker/run \

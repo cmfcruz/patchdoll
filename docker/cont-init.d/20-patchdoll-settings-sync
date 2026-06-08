@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -eu
+
+# shellcheck source=../s6/scripts/lib.sh
+. /etc/s6-overlay/scripts/lib.sh
+log_tag="patchdoll-settings-sync"
+
+# Persist env var overrides into the settings DB before any service starts.
+#
+# packages/core/src/config.ts resolves overrides like PATCHDOLL_AI_PROVIDER in
+# the server process, but the agent subprocess never sees the process
+# environment: its only source of truth is `patchdollctl settings get`, which
+# reads the DB. When an env override disagrees with the seeded DB value the
+# agent reports — and edits — the wrong provider's settings (issue #42). Syncing
+# the overrides here keeps the DB consistent with the effective runtime value.
+#
+# Each entry mirrors an override resolved in config.ts. Keep this list in step
+# with that file.
+
+# Open the DB as the agent user so the file is created with the same ownership
+# the workers expect (agent:patchdoll-ipc); umask keeps any SQLite WAL/SHM
+# sidecars group-writable for the patchdoll server.
+umask 007
+
+sync_setting() {
+  local env_name="$1" key="$2" value="${!1:-}"
+
+  [ -n "$value" ] || return 0
+
+  if s6-setuidgid agent patchdollctl settings set "$key" "$value" >/dev/null 2>&1; then
+    log "synced ${key} from ${env_name}"
+  else
+    log "could not apply ${env_name} to ${key}; keeping existing DB value"
+  fi
+}
+
+sync_setting PATCHDOLL_AI_PROVIDER ai.provider
+sync_setting PATCHDOLL_AI_TIMEOUT_SECONDS ai.timeoutSeconds
+sync_setting PATCHDOLL_AI_MAX_CONCURRENT_RUNS ai.maxConcurrentRuns
+sync_setting PATCHDOLL_CODEX_BYPASS_APPROVALS_AND_SANDBOX ai.bypassSandboxAndApprovals
