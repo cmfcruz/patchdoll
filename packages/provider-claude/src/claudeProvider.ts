@@ -54,6 +54,7 @@ interface ClaudeInvocation {
   permissionMode: string;
   maxTurns: number;
   memoryEnabled: boolean;
+  suppressInteractiveTools: boolean;
   runtimeEnv: Record<string, string>;
   sessionId?: string;
   progress?: ProgressSink;
@@ -162,6 +163,7 @@ export class ClaudeAiProvider implements AiProvider {
           permissionMode,
           maxTurns,
           memoryEnabled,
+          suppressInteractiveTools: task.event.source === "slack",
           runtimeEnv,
           sessionId,
           progress: task.progress
@@ -407,6 +409,9 @@ function claudeArgs(invocation: ClaudeInvocation): string[] {
     "--permission-mode",
     invocation.permissionMode
   ];
+  if (invocation.suppressInteractiveTools) {
+    args.push("--disallowedTools", "AskUserQuestion");
+  }
   if (invocation.sessionId) {
     args.push("--resume", invocation.sessionId);
   }

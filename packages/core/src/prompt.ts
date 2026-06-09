@@ -41,6 +41,12 @@ export function buildPatchdollPrompt(
     );
   }
 
+  if (task.event.source === "slack") {
+    lines.push(
+      "You cannot show interactive pickers or use user-input tools in Slack runs. If you need clarification, ask as normal assistant text. For low-risk decisions, proceed with a clearly stated assumption rather than blocking."
+    );
+  }
+
   lines.push(
     "",
     "Slack context:",
