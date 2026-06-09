@@ -127,7 +127,7 @@ Open **App Home**.
 
 Put the `xoxb-` token in `PATCHDOLL_SLACK_BOT_TOKEN`.
 
-Both Slack tokens belong in `/run/secrets/patchdoll.env`. The main
+Pass both Slack tokens as container environment variables. The main
 [README](../README.md#environment-reference) lists the full secrets and runtime
 environment reference.
 
@@ -191,8 +191,8 @@ settings from Slack:
 /patchdoll set Codex model to gpt-5.5
 ```
 
-Secrets do not belong in settings. Keep Slack tokens, API keys, cookies, private
-keys, and credentials in `/run/secrets/patchdoll.env`.
+Secrets do not belong in settings. Provide Slack tokens, API keys, cookies,
+private keys, and credentials as container environment variables.
 
 ## Optional: Reset a thread's session
 

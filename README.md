@@ -65,21 +65,19 @@ mkdir -p "$PATCHDOLL_HOME"/{state,codex}
 chmod 700 "$PATCHDOLL_HOME" "$PATCHDOLL_HOME"/{state,codex}
 ```
 
-### 3. Save your Slack secrets
+### 3. Prepare your secret environment variables
 
-Paste your real Slack tokens:
+Patchdoll accepts secrets through container environment variables. At minimum,
+set your Slack tokens when you start the container:
 
 ```sh
-cat > "$PATCHDOLL_HOME/secrets.env" <<'EOF'
-PATCHDOLL_SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
-PATCHDOLL_SLACK_APP_TOKEN=xapp-your-slack-app-token
-EOF
-chmod 600 "$PATCHDOLL_HOME/secrets.env"
+-e PATCHDOLL_SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
+-e PATCHDOLL_SLACK_APP_TOKEN=xapp-your-slack-app-token
 ```
 
-If you want noninteractive Codex login, add `OPENAI_API_KEY=...` or
-`CODEX_ACCESS_TOKEN=...` to this same file. If neither is present, Patchdoll
-starts Codex device-code auth on first startup and stores the login state in
+If you want noninteractive Codex login, also pass `OPENAI_API_KEY=...` or
+`CODEX_ACCESS_TOKEN=...`. If neither is present, Patchdoll starts Codex
+device-code auth on first startup and stores the login state in
 `/patchdoll/agent`.
 
 ### 4. Run Patchdoll
@@ -91,7 +89,8 @@ docker run -d --rm \
   --name patchdoll \
   -v "patchdoll-data:/patchdoll" \
   -v "patchdoll-workspace:/workspace" \
-  -v "$PATCHDOLL_HOME/secrets.env:/run/secrets/patchdoll.env:ro" \
+  -e PATCHDOLL_SLACK_BOT_TOKEN=xoxb-your-slack-bot-token \
+  -e PATCHDOLL_SLACK_APP_TOKEN=xapp-your-slack-app-token \
   patchdoll:latest
 ```
 
@@ -143,7 +142,7 @@ Patchdoll uses fixed paths inside the container:
 - `/workspace`: the project Patchdoll can inspect or edit
 - `/patchdoll/state`: Patchdoll state database
 - `/patchdoll/agent`: provider (Codex or Claude) login and session data
-- `/run/secrets/patchdoll.env`: secret tokens
+- secret env vars: migrated into a root-owned runtime file before services start
 
 You do not need a `config.json` for the normal setup. Patchdoll has defaults.
 
@@ -159,8 +158,8 @@ Use this section when you want to tune the runtime.
 Use host paths when you want Patchdoll state on disk and want Codex to work on
 a specific local checkout instead of an empty Docker volume.
 
-Set `PATCHDOLL_HOME` to the folder that contains your `secrets.env` file, and
-set `PATCHDOLL_WORKSPACE` to the repo Patchdoll should inspect or edit:
+Set `PATCHDOLL_HOME` to the folder for Patchdoll state, and set
+`PATCHDOLL_WORKSPACE` to the repo Patchdoll should inspect or edit:
 
 ```sh
 PATCHDOLL_HOME="$HOME/.patchdoll"
@@ -170,7 +169,8 @@ docker run -d --rm \
   --name patchdoll \
   -v "$PATCHDOLL_HOME:/patchdoll" \
   -v "$PATCHDOLL_WORKSPACE:/workspace" \
-  -v "$PATCHDOLL_HOME/secrets.env:/run/secrets/patchdoll.env:ro" \
+  -e PATCHDOLL_SLACK_BOT_TOKEN=xoxb-your-slack-bot-token \
+  -e PATCHDOLL_SLACK_APP_TOKEN=xapp-your-slack-app-token \
   patchdoll:latest
 ```
 
@@ -201,27 +201,23 @@ You can add these `-e` values to `docker run` when needed:
 -e PATCHDOLL_SLACK_COMMAND=/patchdoll
 ```
 
-Prefer keeping Slack tokens and OAuth tokens in `secrets.env` instead of `-e`
-values.
-
-If a deployment platform can only provide secrets as container environment
-variables, Patchdoll moves a narrow allowlist of secret env vars into
-`/run/secrets/patchdoll.env` during early s6 initialization when that path is
-writable. If `/run/secrets` is a read-only Docker secrets mount, Patchdoll falls
-back to `/run/patchdoll/secrets.env`. In both cases it removes the allowlisted
-secrets from the s6 service environment before user-facing services start. This
-reduces accidental inheritance by Codex or other child processes; it does not
-hide those values from the container runtime, Docker metadata, root users, or
-processes with access to the secrets file.
+Provide secrets as container environment variables. During early s6
+initialization, Patchdoll moves a narrow allowlist of secret env vars into a
+root-owned runtime file, then removes them from the s6 service environment
+before user-facing services start. The generated file is a fresh snapshot of the
+current allowlisted environment values, so removed env vars are removed from the
+runtime secrets on restart. This reduces accidental inheritance by Codex or
+other child processes; it does not hide those values from the container runtime,
+Docker metadata, root users, or processes with access to root-owned runtime
+files.
 
 ### Environment reference
 
-Patchdoll reads secrets from `/run/secrets/patchdoll.env`, with
-`/run/patchdoll/secrets.env` as the runtime fallback for env-file migrations when
-Docker mounts `/run/secrets` read-only. Runtime knobs stay in the container
+Patchdoll reads secrets from allowlisted container environment variables and
+migrates them before services start. Runtime knobs stay in the container
 environment. Keep those buckets separate.
 
-Secrets file values:
+Secret environment variables:
 
 | Name | Required | Purpose |
 | --- | --- | --- |
@@ -284,16 +280,13 @@ For noninteractive authentication, generate a long-lived Claude Code OAuth token
 claude setup-token
 ```
 
-Then store the printed token in `/run/secrets/patchdoll.env`:
-
-```sh
-CLAUDE_CODE_OAUTH_TOKEN=...
-```
+Then pass the printed token as `CLAUDE_CODE_OAUTH_TOKEN=...` when starting the
+container.
 
 Patchdoll scrubs allowlisted Claude credentials from the inherited service
-environment during startup. Prefer the secrets file; `-e`/`--env-file` works as
-a migration path, with the usual Docker metadata caveats, because apparently
-secrets still enjoy paperwork.
+environment during startup. Provide them as environment variables at container
+start, with the usual Docker metadata caveats, because apparently secrets still
+enjoy paperwork.
 
 Useful DB-backed settings:
 
@@ -357,21 +350,15 @@ The build expects `package-lock.json` to be present.
 
 ### Patchdoll says a Slack token is missing
 
-Check that your secret file is mounted here:
-
-```text
-/run/secrets/patchdoll.env
-```
-
-And that it contains:
+Check that the container was started with:
 
 ```text
 PATCHDOLL_SLACK_BOT_TOKEN=xoxb-...
 PATCHDOLL_SLACK_APP_TOKEN=xapp-...
 ```
 
-Do not pass Slack tokens with `-e` or `--env-file`. Patchdoll intentionally reads
-them from the mounted secrets file.
+Pass Slack tokens as environment variables, either with `-e` or `--env-file`.
+Patchdoll migrates and scrubs them during startup.
 
 ### Slash command works, but mentions do not
 
