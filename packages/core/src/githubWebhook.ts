@@ -239,7 +239,6 @@ function githubWebhookConfig(): GithubWebhookConfig {
 }
 
 async function githubWebhookSecret(): Promise<string | undefined> {
-  rejectSecretEnv("PATCHDOLL_GITHUB_WEBHOOK_SECRET");
   return patchdollSecret("PATCHDOLL_GITHUB_WEBHOOK_SECRET");
 }
 
@@ -661,12 +660,6 @@ function commentExcerpt(value: string, maxChars: number): string {
     return normalized;
   }
   return `${chars.slice(0, maxChars).join("")}…`;
-}
-
-function rejectSecretEnv(name: string): void {
-  if (process.env[name]) {
-    throw new Error(`${name} must be configured in /run/secrets/patchdoll.env`);
-  }
 }
 
 function escapeSlackText(value: string): string {
