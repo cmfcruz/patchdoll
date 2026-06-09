@@ -4,9 +4,9 @@
 #
 # Set `log_tag` to the service name before calling log().
 
-# Secret env files, tried in order. Within a file the last assignment wins,
-# matching the semantics of sourcing the file.
-secrets_files="/run/secrets/patchdoll.env /run/patchdoll/secrets.env"
+# Secret env file. Within the file the last assignment wins, matching the
+# semantics of sourcing the file.
+secrets_files="/run/secrets/patchdoll.env"
 
 log() {
   printf '%s: %s\n' "${log_tag:-patchdoll}" "$*" >&2
@@ -58,8 +58,8 @@ shell_quote() {
 # it is not inherited by unrelated child processes.
 stash_secret_env() {
   local name="$1"
-  local secrets_file="/run/patchdoll/secrets.env"
-  local secrets_dir="/run/patchdoll"
+  local secrets_file="/run/secrets/patchdoll.env"
+  local secrets_dir="/run/secrets"
   local s6_env_dir
 
   if [ -z "${!name:-}" ]; then
@@ -74,7 +74,8 @@ stash_secret_env() {
       shell_quote "${!name}"
       printf '\n'
     } >> "$secrets_file"
-    chmod 0600 "$secrets_file"
+    chown root:patchdoll "$secrets_file" 2>/dev/null || true
+    chmod 0640 "$secrets_file"
   fi
 
   for s6_env_dir in /var/run/s6/container_environment /run/s6/container_environment; do

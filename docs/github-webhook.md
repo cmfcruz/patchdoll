@@ -9,16 +9,15 @@ notifications are compact pointers back to GitHub, not remote-control panels.
 
 ## Configure secrets
 
-Add the webhook secret and Slack bot token to `/run/secrets/patchdoll.env` via
-your mounted secrets file:
+Pass the webhook secret and Slack bot token as container environment variables:
 
 ```sh
 PATCHDOLL_SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
 PATCHDOLL_GITHUB_WEBHOOK_SECRET=your-github-webhook-secret
 ```
 
-If you expose Patchdoll through ngrok, keep the ngrok auth token in the same
-secrets file:
+If you expose Patchdoll through ngrok, pass the ngrok auth token as another
+environment variable:
 
 ```sh
 PATCHDOLL_NGROK_AUTHTOKEN=your-ngrok-auth-token
@@ -92,9 +91,8 @@ Optional ngrok runtime setting:
 -e PATCHDOLL_NGROK_DOMAIN=your-stable-domain.ngrok-free.app
 ```
 
-The ngrok auth token belongs in `/run/secrets/patchdoll.env` as
-`PATCHDOLL_NGROK_AUTHTOKEN`. If that secret is not set, the ngrok S6 service
-logs that it is disabled and does not start a tunnel.
+Pass the ngrok auth token as `PATCHDOLL_NGROK_AUTHTOKEN`. If that secret is not
+set, the ngrok S6 service logs that it is disabled and does not start a tunnel.
 
 ## Slack notification behavior
 
