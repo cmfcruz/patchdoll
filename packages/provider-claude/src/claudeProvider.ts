@@ -387,7 +387,7 @@ export class ClaudeAiProvider implements AiProvider {
   }
 }
 
-export function claudeArgs(invocation: ClaudeInvocation): string[] {
+function claudeArgs(invocation: ClaudeInvocation): string[] {
   const args = [
     "--append-system-prompt-file",
     invocation.instructionsFile, 
