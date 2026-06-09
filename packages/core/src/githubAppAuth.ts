@@ -4,7 +4,8 @@ import { mkdir, readFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-const TOKEN_FRESHNESS_MS = 30 * 60 * 1000;
+const TOKEN_CACHE_FLOOR_MS = 60 * 1000;
+const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
 const GITHUB_API_URL = "https://api.github.com";
 const GITHUB_API_VERSION = "2022-11-28";
 const PATCHDOLL_SECRETS_PATHS = ["/run/secrets/patchdoll.env", "/run/patchdoll/secrets.env"];
@@ -17,6 +18,14 @@ interface GitHubAppConfig {
 
 interface InstallationTokenResponse {
   token?: unknown;
+  expires_at?: unknown;
+  permissions?: unknown;
+}
+
+interface InstallationToken {
+  token: string;
+  expiresAt: string;
+  permissions?: string;
 }
 
 export async function githubAppEnv(
@@ -47,7 +56,7 @@ async function installationToken(
 
   const token = await requestInstallationToken(config);
   storeInstallationToken(stateDbPath, config.installationId, token);
-  return token;
+  return token.token;
 }
 
 function cachedInstallationToken(
@@ -56,15 +65,19 @@ function cachedInstallationToken(
 ): string | undefined {
   const db = openTokenDb(stateDbPath);
   try {
-    const minFetchedAt = new Date(Date.now() - TOKEN_FRESHNESS_MS).toISOString();
+    const now = Date.now();
+    const minFetchedAt = new Date(now - TOKEN_CACHE_FLOOR_MS).toISOString();
+    const minExpiresAt = new Date(now + TOKEN_EXPIRY_BUFFER_MS).toISOString();
     const row = db
       .prepare(
         `SELECT token
          FROM github_installation_tokens
-         WHERE installation_id = ? AND fetched_at >= ?
+         WHERE installation_id = ?
+           AND fetched_at >= ?
+           AND expires_at > ?
          LIMIT 1`
       )
-      .get(installationId, minFetchedAt);
+      .get(installationId, minFetchedAt, minExpiresAt);
 
     if (!row || typeof row !== "object" || !("token" in row)) {
       return undefined;
@@ -79,17 +92,31 @@ function cachedInstallationToken(
 function storeInstallationToken(
   stateDbPath: string,
   installationId: string,
-  token: string
+  token: InstallationToken
 ): void {
   const db = openTokenDb(stateDbPath);
   try {
     db.prepare(
-      `INSERT INTO github_installation_tokens (installation_id, token, fetched_at)
-       VALUES (?, ?, ?)
+      `INSERT INTO github_installation_tokens (
+         installation_id,
+         token,
+         fetched_at,
+         expires_at,
+         permissions
+       )
+       VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(installation_id) DO UPDATE SET
          token = excluded.token,
-         fetched_at = excluded.fetched_at`
-    ).run(installationId, token, new Date().toISOString());
+         fetched_at = excluded.fetched_at,
+         expires_at = excluded.expires_at,
+         permissions = excluded.permissions`
+    ).run(
+      installationId,
+      token.token,
+      new Date().toISOString(),
+      token.expiresAt,
+      token.permissions ?? null
+    );
   } finally {
     db.close();
   }
@@ -113,16 +140,41 @@ function openTokenDb(path: string): DatabaseSync {
     CREATE TABLE IF NOT EXISTS github_installation_tokens (
       installation_id TEXT PRIMARY KEY,
       token TEXT NOT NULL,
-      fetched_at TEXT NOT NULL
+      fetched_at TEXT NOT NULL,
+      expires_at TEXT,
+      permissions TEXT
     ) STRICT;
   `);
+
+  ensureTokenDbColumn(db, "expires_at", "TEXT");
+  ensureTokenDbColumn(db, "permissions", "TEXT");
 
   return db;
 }
 
+function ensureTokenDbColumn(
+  db: DatabaseSync,
+  name: string,
+  definition: string
+): void {
+  const rows = db.prepare("PRAGMA table_info(github_installation_tokens)").all();
+  const exists = rows.some(
+    (row) =>
+      row &&
+      typeof row === "object" &&
+      "name" in row &&
+      row.name === name
+  );
+  if (!exists) {
+    db.exec(
+      `ALTER TABLE github_installation_tokens ADD COLUMN ${name} ${definition}`
+    );
+  }
+}
+
 async function requestInstallationToken(
   config: GitHubAppConfig
-): Promise<string> {
+): Promise<InstallationToken> {
   const jwt = githubAppJwt(config.appId, config.privateKey);
   const response = await fetch(
     `${GITHUB_API_URL}/app/installations/${encodeURIComponent(
@@ -151,7 +203,24 @@ async function requestInstallationToken(
     );
   }
 
-  return body.token;
+  if (typeof body.expires_at !== "string" || !body.expires_at) {
+    throw new Error(
+      "GitHub App installation token response did not include expires_at"
+    );
+  }
+
+  return {
+    token: body.token,
+    expiresAt: body.expires_at,
+    permissions: stringifyPermissions(body.permissions)
+  };
+}
+
+function stringifyPermissions(value: unknown): string | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  return JSON.stringify(value);
 }
 
 function githubAppJwt(appId: string, privateKey: string): string {
