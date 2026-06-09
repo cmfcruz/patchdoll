@@ -10,8 +10,8 @@ uses_codex_provider() {
 }
 
 auth_on_startup="${PATCHDOLL_CODEX_AUTH_ON_STARTUP:-auto}"
-reject_secret_env CODEX_ACCESS_TOKEN
-reject_secret_env OPENAI_API_KEY
+stash_secret_env CODEX_ACCESS_TOKEN
+stash_secret_env OPENAI_API_KEY
 codex_access_token="$(secret_value CODEX_ACCESS_TOKEN || true)"
 openai_api_key="$(secret_value OPENAI_API_KEY || true)"
 

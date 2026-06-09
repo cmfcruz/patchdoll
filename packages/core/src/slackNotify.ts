@@ -15,10 +15,9 @@ interface SlackPostMessageResponse {
 export async function postSlackNotification(
   notification: SlackNotification
 ): Promise<void> {
-  rejectSecretEnv("PATCHDOLL_SLACK_BOT_TOKEN");
   const token = await patchdollSecret("PATCHDOLL_SLACK_BOT_TOKEN");
   if (!token) {
-    throw new Error("PATCHDOLL_SLACK_BOT_TOKEN is required in /run/secrets/patchdoll.env");
+    throw new Error("PATCHDOLL_SLACK_BOT_TOKEN is required in Patchdoll runtime secrets");
   }
 
   const response = await fetch(SLACK_API_URL, {
@@ -44,11 +43,5 @@ export async function postSlackNotification(
     throw new Error(
       `Slack notification failed: ${typeof body.error === "string" ? body.error : "unknown_error"}`
     );
-  }
-}
-
-function rejectSecretEnv(name: string): void {
-  if (process.env[name]) {
-    throw new Error(`${name} must be configured in /run/secrets/patchdoll.env`);
   }
 }

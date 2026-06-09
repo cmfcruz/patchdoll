@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-log() {
-  echo "ngrok-tunnel: $*" >&2
-}
+log_tag="ngrok-tunnel"
+# shellcheck source=../../scripts/lib.sh
+. /etc/s6-overlay/scripts/lib.sh
 
 wait_for_patchdoll() {
   local port="${PORT:-3000}"
@@ -26,20 +26,10 @@ wait_for_patchdoll() {
   exit 1
 }
 
-if [ -n "${PATCHDOLL_NGROK_AUTHTOKEN:-}" ]; then
-  log "PATCHDOLL_NGROK_AUTHTOKEN must be configured in /run/secrets/patchdoll.env, not the container environment"
-  exit 1
-fi
-ngrok_authtoken="$(awk -F= '
-  $1 == "PATCHDOLL_NGROK_AUTHTOKEN" {
-    sub(/^[^=]*=/, "")
-    gsub(/^[[:space:]]+|[[:space:]]+$/, "")
-    print
-    exit
-  }
-' /run/secrets/patchdoll.env 2>/dev/null || true)"
+stash_secret_env PATCHDOLL_NGROK_AUTHTOKEN
+ngrok_authtoken="$(secret_value PATCHDOLL_NGROK_AUTHTOKEN || true)"
 if [ -z "$ngrok_authtoken" ]; then
-  log "disabled because PATCHDOLL_NGROK_AUTHTOKEN is not set in /run/secrets/patchdoll.env"
+  log "disabled because PATCHDOLL_NGROK_AUTHTOKEN is not set in the Patchdoll secrets file"
   exec sleep infinity
 fi
 
