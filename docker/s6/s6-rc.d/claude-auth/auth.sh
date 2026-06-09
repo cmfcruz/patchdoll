@@ -10,8 +10,8 @@ uses_claude_provider() {
 }
 
 auth_on_startup="${PATCHDOLL_CLAUDE_AUTH_ON_STARTUP:-auto}"
-reject_secret_env ANTHROPIC_API_KEY
-reject_secret_env CLAUDE_CODE_OAUTH_TOKEN
+stash_secret_env ANTHROPIC_API_KEY
+stash_secret_env CLAUDE_CODE_OAUTH_TOKEN
 anthropic_api_key="$(secret_value ANTHROPIC_API_KEY || true)"
 claude_code_oauth_token="$(secret_value CLAUDE_CODE_OAUTH_TOKEN || true)"
 

@@ -25,13 +25,6 @@ export async function patchdollSecret(
   name: string,
   path: PatchdollSecretsPath = PATCHDOLL_SECRETS_PATHS
 ): Promise<string | undefined> {
-  if (process.env.PATCHDOLL_SECRETS_ENV_ALLOWED === "1") {
-    const envValue = process.env[name]?.trim();
-    if (envValue) {
-      return envValue;
-    }
-  }
-
   const value = (await readPatchdollSecrets(path))[name]?.trim();
   return value ? value : undefined;
 }

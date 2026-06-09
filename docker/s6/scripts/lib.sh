@@ -83,10 +83,6 @@ stash_secret_env() {
   unset "$name"
 }
 
-reject_secret_env() {
-  stash_secret_env "$1"
-}
-
 # Print the configured AI provider (lowercased), defaulting to codex.
 # PATCHDOLL_AI_PROVIDER wins; otherwise read it through the CLI we already ship.
 selected_provider() {

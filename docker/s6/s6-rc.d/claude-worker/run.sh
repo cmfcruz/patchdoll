@@ -42,8 +42,8 @@ rm -f "$socket_path"
 export HOME="$claude_home"
 export CLAUDE_CONFIG_DIR="$claude_home"
 export DISABLE_AUTOUPDATER=1
-reject_secret_env ANTHROPIC_API_KEY
-reject_secret_env CLAUDE_CODE_OAUTH_TOKEN
+stash_secret_env ANTHROPIC_API_KEY
+stash_secret_env CLAUDE_CODE_OAUTH_TOKEN
 claude_code_oauth_token="$(secret_value CLAUDE_CODE_OAUTH_TOKEN || true)"
 anthropic_api_key="$(secret_value ANTHROPIC_API_KEY || true)"
 if [ -n "$claude_code_oauth_token" ]; then

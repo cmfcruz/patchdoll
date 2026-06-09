@@ -806,8 +806,7 @@ function slackMessageUrl(event) {
 }
 
 function requiredSecret(name) {
-  const envAllowed = process.env.PATCHDOLL_SECRETS_ENV_ALLOWED === "1";
-  const value = readSlackSecrets()[name] || (envAllowed ? process.env[name] : undefined);
+  const value = readSlackSecrets()[name];
   if (!value) {
     throw new Error(`${name} is required in ${patchdollSecretsPath}`);
   }
