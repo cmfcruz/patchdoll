@@ -246,6 +246,8 @@ Container environment values:
 | `PATCHDOLL_AI_PROVIDER` | `codex` | AI provider to use. Use `codex` or `claude`. |
 | `PATCHDOLL_AI_TIMEOUT_SECONDS` | `900` | AI task timeout (applies to the active provider). |
 | `PATCHDOLL_AI_MAX_CONCURRENT_RUNS` | `1` | Maximum concurrent AI tasks (applies to the active provider). |
+| `PATCHDOLL_GIT_USER_NAME` | unset | Optional git `user.name` override for agent commits; configure with `PATCHDOLL_GIT_USER_EMAIL`. |
+| `PATCHDOLL_GIT_USER_EMAIL` | unset | Optional git `user.email` override for agent commits; configure with `PATCHDOLL_GIT_USER_NAME`. |
 | `PATCHDOLL_CODEX_BYPASS_APPROVALS_AND_SANDBOX` | `true` | Whether Codex runs with bypassed approvals and sandbox. Use `0`, `false`, `no`, or `off` to disable. |
 | `PATCHDOLL_CODEX_AUTH_ON_STARTUP` | `auto` | Codex startup auth mode. Use `0`, `false`, `no`, or `off` to skip startup auth. |
 | `PATCHDOLL_CODEX_PROFILE` | unset | Optional Codex profile passed to new Codex sessions. |
@@ -263,6 +265,10 @@ Container environment values:
 Internal runtime values such as `CODEX_HOME`, `HOME`, `PATCHDOLL_TASK`,
 `GH_TOKEN`, `GITHUB_TOKEN`, and `GH_PROMPT_DISABLED` are set by Patchdoll for the
 Codex process. Do not configure them yourself.
+
+When explicit git author overrides are unset and GitHub App auth is available,
+Patchdoll configures the agent git identity from the authenticated `gh` login,
+using GitHub noreply email addresses for commits.
 
 ### Experimental Claude provider scaffold
 

@@ -2,6 +2,7 @@ export * from "./actions.js";
 export * from "./agents.js";
 export * from "./config.js";
 export * from "./githubAppAuth.js";
+export * from "./gitIdentity.js";
 export * from "./http.js";
 export * from "./githubWebhook.js";
 export * from "./log.js";
