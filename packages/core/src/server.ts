@@ -24,7 +24,7 @@ const httpServer = createServer(async (request, response) => {
 
   if (request.method === "POST" && path === "/webhooks/github") {
     try {
-      await handleGithubWebhook(request, response);
+      await handleGithubWebhook(request, response, runner);
     } catch (error) {
       sendJson(response, 500, {
         ok: false,

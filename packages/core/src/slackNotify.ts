@@ -5,16 +5,18 @@ const SLACK_API_URL = "https://slack.com/api/chat.postMessage";
 export interface SlackNotification {
   channel: string;
   text: string;
+  threadTs?: string;
 }
 
 interface SlackPostMessageResponse {
   ok?: unknown;
   error?: unknown;
+  ts?: unknown;
 }
 
 export async function postSlackNotification(
   notification: SlackNotification
-): Promise<void> {
+): Promise<string | undefined> {
   const token = await patchdollSecret("PATCHDOLL_SLACK_BOT_TOKEN");
   if (!token) {
     throw new Error("PATCHDOLL_SLACK_BOT_TOKEN is required in Patchdoll runtime secrets");
@@ -29,6 +31,7 @@ export async function postSlackNotification(
     body: JSON.stringify({
       channel: notification.channel,
       text: notification.text,
+      thread_ts: notification.threadTs,
       unfurl_links: false,
       unfurl_media: false
     })
@@ -44,4 +47,6 @@ export async function postSlackNotification(
       `Slack notification failed: ${typeof body.error === "string" ? body.error : "unknown_error"}`
     );
   }
+
+  return typeof body.ts === "string" ? body.ts : undefined;
 }
