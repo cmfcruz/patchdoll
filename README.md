@@ -254,7 +254,8 @@ Container environment values:
 | `PATCHDOLL_SLACK_COMMAND` | `/patchdoll` | Slash command name the Slack bridge listens for. |
 | `PATCHDOLL_SLACK_THREAD_MAX_MESSAGES` | `100` | Maximum Slack thread messages fetched. Use `0` to disable thread fetching. |
 | `PATCHDOLL_SLACK_THREAD_MAX_MESSAGE_CHARS` | `4000` | Maximum characters kept per Slack thread message. |
-| `PATCHDOLL_ADMINS` | unset | Comma- or newline-separated Slack user IDs allowed to change settings. |
+| `PATCHDOLL_ADMINS` | unset | Comma- or newline-separated Slack user IDs allowed to change settings. Admins are implicitly trusted to invoke Patchdoll. |
+| `PATCHDOLL_TRUSTED_USERS` | unset | Comma- or newline-separated Slack user IDs allowed to invoke Patchdoll for normal work. **Fails closed, no escape hatch:** set at least one of `PATCHDOLL_TRUSTED_USERS` / `PATCHDOLL_ADMINS` or Patchdoll denies every request. Matched against the requesting actor's Slack user ID only. |
 | `PATCHDOLL_LOG_LEVEL` | `info` | Container console log level: `warn`, `info`, `debug`, or `trace`. |
 | `PATCHDOLL_GITHUB_NOTIFY_SLACK_CHANNEL` | unset | Slack channel ID that receives GitHub webhook notifications. |
 | `PATCHDOLL_GITHUB_WEBHOOK_TRACKED_REPOS` | unset | Comma- or newline-separated GitHub repositories tracked through webhooks. |
@@ -324,9 +325,9 @@ unless you explicitly list their Slack user IDs in `PATCHDOLL_ADMINS`.
 -e PATCHDOLL_ADMINS=U12345678,W12345678
 ```
 
-Use Slack user IDs, not display names. See
-[Allow Slack Admin Settings Changes](docs/slack-how-to.md#optional-allow-slack-admin-settings-changes)
-for how to copy the right ID from Slack.
+Use Slack user IDs, not display names. See [Who can use
+Patchdoll](docs/slack-how-to.md#who-can-use-patchdoll-required) for how to copy
+the right ID from Slack and for the trusted-users list every deployment needs.
 
 After that, listed admins can ask Patchdoll to update non-secret runtime
 settings:
