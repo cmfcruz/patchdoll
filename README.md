@@ -65,7 +65,7 @@ mkdir -p "$PATCHDOLL_HOME"/{state,codex}
 chmod 700 "$PATCHDOLL_HOME" "$PATCHDOLL_HOME"/{state,codex}
 ```
 
-### 3. Prepare your secret environment variables
+### 3. Prepare your secret and access environment variables
 
 Patchdoll accepts secrets through container environment variables. At minimum,
 set your Slack tokens when you start the container:
@@ -73,6 +73,16 @@ set your Slack tokens when you start the container:
 ```sh
 -e PATCHDOLL_SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
 -e PATCHDOLL_SLACK_APP_TOKEN=xapp-your-slack-app-token
+```
+
+Patchdoll also needs at least one allowed Slack user ID. It fails closed when
+both access lists are empty, so set `PATCHDOLL_TRUSTED_USERS` for people who may
+invoke Patchdoll and/or `PATCHDOLL_ADMINS` for people who may also change
+settings:
+
+```sh
+-e PATCHDOLL_TRUSTED_USERS=U12345678,U23456789
+-e PATCHDOLL_ADMINS=U12345678
 ```
 
 If you want noninteractive Codex login, also pass `OPENAI_API_KEY=...` or
@@ -91,6 +101,8 @@ docker run -d --rm \
   -v "patchdoll-workspace:/workspace" \
   -e PATCHDOLL_SLACK_BOT_TOKEN=xoxb-your-slack-bot-token \
   -e PATCHDOLL_SLACK_APP_TOKEN=xapp-your-slack-app-token \
+  -e PATCHDOLL_TRUSTED_USERS=U12345678,U23456789 \
+  -e PATCHDOLL_ADMINS=U12345678 \
   patchdoll:latest
 ```
 
@@ -171,6 +183,8 @@ docker run -d --rm \
   -v "$PATCHDOLL_WORKSPACE:/workspace" \
   -e PATCHDOLL_SLACK_BOT_TOKEN=xoxb-your-slack-bot-token \
   -e PATCHDOLL_SLACK_APP_TOKEN=xapp-your-slack-app-token \
+  -e PATCHDOLL_TRUSTED_USERS=U12345678,U23456789 \
+  -e PATCHDOLL_ADMINS=U12345678 \
   patchdoll:latest
 ```
 
@@ -319,7 +333,10 @@ how the agent behaves. Setting the value explicitly overrides both providers:
 ### Let Slack admins change Patchdoll settings
 
 Patchdoll is secure by default. Slack users cannot change Patchdoll settings
-unless you explicitly list their Slack user IDs in `PATCHDOLL_ADMINS`.
+unless you explicitly list their Slack user IDs in `PATCHDOLL_ADMINS`. Admins
+are implicitly trusted to invoke Patchdoll, so a deployment with
+`PATCHDOLL_ADMINS` set does not need to duplicate those users in
+`PATCHDOLL_TRUSTED_USERS`.
 
 ```sh
 -e PATCHDOLL_ADMINS=U12345678,W12345678
