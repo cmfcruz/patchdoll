@@ -103,5 +103,7 @@ For supported events, Patchdoll posts a message containing:
 - for comment events, a compact comment preview capped at 300 characters
 
 Comment previews are escaped before posting to Slack, and webhook text alone
-does not get to drive Codex. Any trusted Slack follow-up remains the trust
-boundary. Sensible, yes. Slightly less dramatic, also yes.
+does not get to drive Codex. A follow-up request from a trusted Slack user
+remains the interactive trust boundary; quoted webhook text inside that request
+is still context, not authority. Sensible, yes. Slightly less dramatic, also
+yes.

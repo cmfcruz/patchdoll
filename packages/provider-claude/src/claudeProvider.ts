@@ -14,6 +14,7 @@ import {
   buildPatchdollPrompt,
   buildResetThreadResult,
   extractProposedActionsFromMessage,
+  ensureGitAuthorIdentity,
   isClaudeResumeFailure,
   isResetThreadCommand,
   patchdollThreadKey,
@@ -45,13 +46,18 @@ const DEFAULT_LOG_LEVEL: LogLevel = "info";
 const MAX_LOG_VALUE_LENGTH = 4000;
 const PATCHDOLL_LOG_LEVEL = parseLogLevel(process.env.PATCHDOLL_LOG_LEVEL);
 
+// Patchdoll runs Claude Code headlessly (`-p` stream-json), so the only
+// permission mode that works is one that never pauses for interactive
+// approval. Pinned here rather than exposed as a setting: the other modes
+// (default/acceptEdits/plan) would stall or break a non-interactive run.
+const CLAUDE_PERMISSION_MODE = "bypassPermissions";
+
 interface ClaudeInvocation {
   instructionsFile: string;
   prompt: string;
   workdir: string;
   model: string;
   effort: string;
-  permissionMode: string;
   maxTurns: number;
   memoryEnabled: boolean;
   suppressInteractiveTools: boolean;
@@ -107,7 +113,6 @@ export class ClaudeAiProvider implements AiProvider {
 
     const model = claudeModel();
     const effort = claudeEffort();
-    const permissionMode = claudePermissionMode();
     const maxTurns = claudeMaxTurns();
     const memoryEnabled = aiMemoryEnabled();
     const threadKey = patchdollThreadKey(task);
@@ -160,7 +165,6 @@ export class ClaudeAiProvider implements AiProvider {
           workdir: PATCHDOLL_WORKDIR,
           model,
           effort,
-          permissionMode,
           maxTurns,
           memoryEnabled,
           suppressInteractiveTools: task.event.source === "slack",
@@ -244,7 +248,7 @@ export class ClaudeAiProvider implements AiProvider {
       provider: "claude",
       model,
       effort,
-      permissionMode,
+      permissionMode: CLAUDE_PERMISSION_MODE,
       maxTurns,
       memoryEnabled,
       threadKey,
@@ -278,16 +282,18 @@ export class ClaudeAiProvider implements AiProvider {
   private async invokeClaude(invocation: ClaudeInvocation): Promise<ClaudeJsonResult> {
     writePatchdollLog("debug", "claude invocation start", {
       model: invocation.model,
-      permissionMode: invocation.permissionMode,
+      permissionMode: CLAUDE_PERMISSION_MODE,
       maxTurns: invocation.maxTurns,
       workdir: invocation.workdir,
       resuming: Boolean(invocation.sessionId)
     });
+    const env = buildClaudeEnv(invocation.runtimeEnv, invocation.memoryEnabled);
+    await ensureGitAuthorIdentity({ env, cwd: invocation.workdir });
     return new Promise((resolve, reject) => {
       const child = spawn(this.claudeBin, claudeArgs(invocation), {
         cwd: invocation.workdir,
         stdio: ["ignore", "pipe", "pipe"],
-        env: buildClaudeEnv(invocation.runtimeEnv, invocation.memoryEnabled)
+        env
       });
       let stdout = "";
       let stderr = "";
@@ -407,7 +413,7 @@ function claudeArgs(invocation: ClaudeInvocation): string[] {
     "--effort",
     invocation.effort,
     "--permission-mode",
-    invocation.permissionMode
+    CLAUDE_PERMISSION_MODE
   ];
   if (invocation.suppressInteractiveTools) {
     args.push("--disallowedTools", "AskUserQuestion");
@@ -467,11 +473,6 @@ function claudeEffort(): string {
   }
 
   return effort;
-}
-
-function claudePermissionMode(): string {
-  const value = setting("claude.permissionMode", DEFAULT_SETTINGS["claude.permissionMode"]);
-  return typeof value === "string" ? value : DEFAULT_SETTINGS["claude.permissionMode"];
 }
 
 function claudeMaxTurns(): number {

@@ -179,6 +179,12 @@ With **neither** list set, Patchdoll denies every request — there is no
 open-access mode. Set at least one before expecting a reply, or the bot will
 look broken when it is really just locked.
 
+For allowed users, the current Slack request is the trusted interactive input to
+Patchdoll, like typing a prompt into the AI provider directly. Slack thread
+transcripts, quoted prior messages, and Slack text copied from other systems are
+provided as context/evidence only; they are not separate instructions or
+authorization.
+
 Use Slack user IDs, not display names. To find one:
 
 1. Open the person's Slack profile.

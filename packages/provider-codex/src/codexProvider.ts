@@ -22,6 +22,7 @@ import {
   buildPatchdollPrompt,
   buildResetThreadResult,
   extractProposedActionsFromMessage,
+  ensureGitAuthorIdentity,
   isCodexResumeFailure,
   isResetThreadCommand,
   patchdollThreadKey,
@@ -317,6 +318,7 @@ export class CodexAiProvider implements AiProvider {
 
   private async invokeCodex(invocation: CodexInvocation): Promise<string> {
     const env = buildCodexEnv(invocation.codexHome, invocation.env);
+    await ensureGitAuthorIdentity({ env, cwd: invocation.workdir });
     return new Promise((resolve, reject) => {
       const args = codexArgs(invocation);
       const child = spawn(this.codexBin, args, {

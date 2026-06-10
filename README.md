@@ -20,7 +20,7 @@ Potential risks include:
 
 - unintended code changes, force pushes, branch deletions, or broken releases
 - malicious or mistaken changes caused by prompt injection in issues, pull
-  requests, comments, logs, docs, or Slack messages
+  requests, comments, logs, docs, or quoted Slack transcript content
 - accidental exposure of secrets, private source code, customer data, or
   internal implementation details
 - dependency, workflow, or configuration changes that weaken CI, deployment,
@@ -84,6 +84,11 @@ settings:
 -e PATCHDOLL_TRUSTED_USERS=U12345678,U23456789
 -e PATCHDOLL_ADMINS=U12345678
 ```
+
+The current Slack request from a listed user is Patchdoll's trusted interactive
+input, similar to prompting the AI provider directly. Slack thread transcripts,
+quoted prior Slack messages, and Slack text copied from other systems are still
+context/evidence only; they are not independent instructions or authorization.
 
 If you want noninteractive Codex login, also pass `OPENAI_API_KEY=...` or
 `CODEX_ACCESS_TOKEN=...`. If neither is present, Patchdoll starts Codex
@@ -260,6 +265,8 @@ Container environment values:
 | `PATCHDOLL_AI_PROVIDER` | `codex` | AI provider to use. Use `codex` or `claude`. |
 | `PATCHDOLL_AI_TIMEOUT_SECONDS` | `900` | AI task timeout (applies to the active provider). |
 | `PATCHDOLL_AI_MAX_CONCURRENT_RUNS` | `1` | Maximum concurrent AI tasks (applies to the active provider). |
+| `PATCHDOLL_GIT_USER_NAME` | unset | Optional git `user.name` override for agent commits; configure with `PATCHDOLL_GIT_USER_EMAIL`. |
+| `PATCHDOLL_GIT_USER_EMAIL` | unset | Optional git `user.email` override for agent commits; configure with `PATCHDOLL_GIT_USER_NAME`. |
 | `PATCHDOLL_CODEX_BYPASS_APPROVALS_AND_SANDBOX` | `true` | Whether Codex runs with bypassed approvals and sandbox. Use `0`, `false`, `no`, or `off` to disable. |
 | `PATCHDOLL_CODEX_AUTH_ON_STARTUP` | `auto` | Codex startup auth mode. Use `0`, `false`, `no`, or `off` to skip startup auth. |
 | `PATCHDOLL_CODEX_PROFILE` | unset | Optional Codex profile passed to new Codex sessions. |
@@ -278,6 +285,10 @@ Container environment values:
 Internal runtime values such as `CODEX_HOME`, `HOME`, `PATCHDOLL_TASK`,
 `GH_TOKEN`, `GITHUB_TOKEN`, and `GH_PROMPT_DISABLED` are set by Patchdoll for the
 Codex process. Do not configure them yourself.
+
+When explicit git author overrides are unset and GitHub App auth is available,
+Patchdoll configures the agent git identity from the authenticated `gh` login,
+using GitHub noreply email addresses for commits.
 
 ### Experimental Claude provider scaffold
 
@@ -309,10 +320,12 @@ Useful DB-backed settings:
 patchdollctl settings set ai.provider claude
 patchdollctl settings set claude.model sonnet
 patchdollctl settings set claude.effort high
-patchdollctl settings set claude.permissionMode default
 patchdollctl settings set claude.maxTurns 0
 patchdollctl settings set ai.memoryEnabled false
 ```
+
+Claude permission mode is fixed to `bypassPermissions` for headless Patchdoll
+runs and is not configurable via `patchdollctl`.
 
 `ai.memoryEnabled` is a provider-neutral override for the AI agent's
 cross-thread memory. Flip it at runtime via `patchdollctl` or, for listed
