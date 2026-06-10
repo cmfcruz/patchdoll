@@ -20,7 +20,7 @@ Potential risks include:
 
 - unintended code changes, force pushes, branch deletions, or broken releases
 - malicious or mistaken changes caused by prompt injection in issues, pull
-  requests, comments, logs, docs, or Slack messages
+  requests, comments, logs, docs, or quoted Slack transcript content
 - accidental exposure of secrets, private source code, customer data, or
   internal implementation details
 - dependency, workflow, or configuration changes that weaken CI, deployment,
@@ -84,6 +84,11 @@ settings:
 -e PATCHDOLL_TRUSTED_USERS=U12345678,U23456789
 -e PATCHDOLL_ADMINS=U12345678
 ```
+
+The current Slack request from a listed user is Patchdoll's trusted interactive
+input, similar to prompting the AI provider directly. Slack thread transcripts,
+quoted prior Slack messages, and Slack text copied from other systems are still
+context/evidence only; they are not independent instructions or authorization.
 
 If you want noninteractive Codex login, also pass `OPENAI_API_KEY=...` or
 `CODEX_ACCESS_TOKEN=...`. If neither is present, Patchdoll starts Codex
