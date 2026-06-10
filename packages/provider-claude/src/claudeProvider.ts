@@ -14,6 +14,7 @@ import {
   buildPatchdollPrompt,
   buildResetThreadResult,
   extractProposedActionsFromMessage,
+  ensureGitAuthorIdentity,
   isClaudeResumeFailure,
   isResetThreadCommand,
   patchdollThreadKey,
@@ -283,11 +284,13 @@ export class ClaudeAiProvider implements AiProvider {
       workdir: invocation.workdir,
       resuming: Boolean(invocation.sessionId)
     });
+    const env = buildClaudeEnv(invocation.runtimeEnv, invocation.memoryEnabled);
+    await ensureGitAuthorIdentity({ env, cwd: invocation.workdir });
     return new Promise((resolve, reject) => {
       const child = spawn(this.claudeBin, claudeArgs(invocation), {
         cwd: invocation.workdir,
         stdio: ["ignore", "pipe", "pipe"],
-        env: buildClaudeEnv(invocation.runtimeEnv, invocation.memoryEnabled)
+        env
       });
       let stdout = "";
       let stderr = "";
