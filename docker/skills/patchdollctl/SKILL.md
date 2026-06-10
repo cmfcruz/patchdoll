@@ -36,8 +36,9 @@ Claude (`claude.*`):
 
 - `claude.model`: non-empty string, e.g. `opus` or `sonnet`
 - `claude.effort`: one of `low`, `medium`, `high`, `xhigh`, `max`
-- `claude.permissionMode`: one of `default`, `acceptEdits`, `bypassPermissions`, `plan`
 - `claude.maxTurns`: non-negative integer
+
+Claude permission mode is pinned to `bypassPermissions` for headless runs and is not a supported setting.
 
 Settings only take effect for the provider selected by `ai.provider`. For the live value of any key, run `get`/`list` rather than assuming a default — values are DB-backed and changeable.
 

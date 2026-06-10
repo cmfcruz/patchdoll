@@ -301,10 +301,12 @@ Useful DB-backed settings:
 patchdollctl settings set ai.provider claude
 patchdollctl settings set claude.model sonnet
 patchdollctl settings set claude.effort high
-patchdollctl settings set claude.permissionMode default
 patchdollctl settings set claude.maxTurns 0
 patchdollctl settings set ai.memoryEnabled false
 ```
+
+Claude permission mode is fixed to `bypassPermissions` for headless Patchdoll
+runs and is not configurable via `patchdollctl`.
 
 `ai.memoryEnabled` is a provider-neutral override for the AI agent's
 cross-thread memory. Flip it at runtime via `patchdollctl` or, for listed
