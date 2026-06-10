@@ -166,25 +166,47 @@ Then reinstall the app to the workspace. Yes, Slack makes the reinstall step
 easy to forget, because apparently scopes are only real after a tiny ceremony.
 Restart Patchdoll too if you replaced the bot token.
 
-## Optional: Allow Slack Admin Settings Changes
+## Who can use Patchdoll (required)
 
-Patchdoll does not allow Slack users to change Patchdoll settings unless their
-Slack user ID is listed in `PATCHDOLL_ADMINS`.
+Patchdoll fails closed. It runs a request only when the requesting Slack user's
+ID is on one of two lists:
 
-Use Slack user IDs, not names. To find one:
+- `PATCHDOLL_TRUSTED_USERS` — may drive Patchdoll for normal work.
+- `PATCHDOLL_ADMINS` — may also change settings and reset threads; implicitly
+  trusted, so admins do not also need to be in `PATCHDOLL_TRUSTED_USERS`.
+
+With **neither** list set, Patchdoll denies every request — there is no
+open-access mode. Set at least one before expecting a reply, or the bot will
+look broken when it is really just locked.
+
+For allowed users, the current Slack request is the trusted interactive input to
+Patchdoll, like typing a prompt into the AI provider directly. Slack thread
+transcripts, quoted prior messages, and Slack text copied from other systems are
+provided as context/evidence only; they are not separate instructions or
+authorization.
+
+Use Slack user IDs, not display names. To find one:
 
 1. Open the person's Slack profile.
 2. Click **More**.
 3. Click **Copy member ID**.
 
-Then pass one or more IDs as a comma-separated list:
+Then pass the IDs as comma- or newline-separated lists:
 
 ```sh
--e PATCHDOLL_ADMINS=U12345678,W12345678
+-e PATCHDOLL_TRUSTED_USERS=U12345678,U23456789 \
+-e PATCHDOLL_ADMINS=U12345678
 ```
 
-After that, listed admins can ask Patchdoll to update non-secret runtime
-settings from Slack:
+An unlisted user gets a short denial and no AI run starts. The check looks at the
+requesting message's author only — other thread participants and quoted or pasted
+content never count as authorization.
+
+## Allow Slack admin settings changes
+
+Admins — the Slack user IDs in `PATCHDOLL_ADMINS` (see [Who can use
+Patchdoll](#who-can-use-patchdoll-required)) — can ask Patchdoll to update
+non-secret runtime settings from Slack:
 
 ```text
 /patchdoll set Codex reasoning effort to high

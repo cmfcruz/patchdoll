@@ -20,7 +20,7 @@ Potential risks include:
 
 - unintended code changes, force pushes, branch deletions, or broken releases
 - malicious or mistaken changes caused by prompt injection in issues, pull
-  requests, comments, logs, docs, or Slack messages
+  requests, comments, logs, docs, or quoted Slack transcript content
 - accidental exposure of secrets, private source code, customer data, or
   internal implementation details
 - dependency, workflow, or configuration changes that weaken CI, deployment,
@@ -65,7 +65,7 @@ mkdir -p "$PATCHDOLL_HOME"/{state,codex}
 chmod 700 "$PATCHDOLL_HOME" "$PATCHDOLL_HOME"/{state,codex}
 ```
 
-### 3. Prepare your secret environment variables
+### 3. Prepare your secret and access environment variables
 
 Patchdoll accepts secrets through container environment variables. At minimum,
 set your Slack tokens when you start the container:
@@ -74,6 +74,21 @@ set your Slack tokens when you start the container:
 -e PATCHDOLL_SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
 -e PATCHDOLL_SLACK_APP_TOKEN=xapp-your-slack-app-token
 ```
+
+Patchdoll also needs at least one allowed Slack user ID. It fails closed when
+both access lists are empty, so set `PATCHDOLL_TRUSTED_USERS` for people who may
+invoke Patchdoll and/or `PATCHDOLL_ADMINS` for people who may also change
+settings:
+
+```sh
+-e PATCHDOLL_TRUSTED_USERS=U12345678,U23456789
+-e PATCHDOLL_ADMINS=U12345678
+```
+
+The current Slack request from a listed user is Patchdoll's trusted interactive
+input, similar to prompting the AI provider directly. Slack thread transcripts,
+quoted prior Slack messages, and Slack text copied from other systems are still
+context/evidence only; they are not independent instructions or authorization.
 
 If you want noninteractive Codex login, also pass `OPENAI_API_KEY=...` or
 `CODEX_ACCESS_TOKEN=...`. If neither is present, Patchdoll starts Codex
@@ -91,6 +106,8 @@ docker run -d --rm \
   -v "patchdoll-workspace:/workspace" \
   -e PATCHDOLL_SLACK_BOT_TOKEN=xoxb-your-slack-bot-token \
   -e PATCHDOLL_SLACK_APP_TOKEN=xapp-your-slack-app-token \
+  -e PATCHDOLL_TRUSTED_USERS=U12345678,U23456789 \
+  -e PATCHDOLL_ADMINS=U12345678 \
   patchdoll:latest
 ```
 
@@ -171,6 +188,8 @@ docker run -d --rm \
   -v "$PATCHDOLL_WORKSPACE:/workspace" \
   -e PATCHDOLL_SLACK_BOT_TOKEN=xoxb-your-slack-bot-token \
   -e PATCHDOLL_SLACK_APP_TOKEN=xapp-your-slack-app-token \
+  -e PATCHDOLL_TRUSTED_USERS=U12345678,U23456789 \
+  -e PATCHDOLL_ADMINS=U12345678 \
   patchdoll:latest
 ```
 
@@ -246,6 +265,8 @@ Container environment values:
 | `PATCHDOLL_AI_PROVIDER` | `codex` | AI provider to use. Use `codex` or `claude`. |
 | `PATCHDOLL_AI_TIMEOUT_SECONDS` | `900` | AI task timeout (applies to the active provider). |
 | `PATCHDOLL_AI_MAX_CONCURRENT_RUNS` | `1` | Maximum concurrent AI tasks (applies to the active provider). |
+| `PATCHDOLL_GIT_USER_NAME` | unset | Optional git `user.name` override for agent commits; configure with `PATCHDOLL_GIT_USER_EMAIL`. |
+| `PATCHDOLL_GIT_USER_EMAIL` | unset | Optional git `user.email` override for agent commits; configure with `PATCHDOLL_GIT_USER_NAME`. |
 | `PATCHDOLL_CODEX_BYPASS_APPROVALS_AND_SANDBOX` | `true` | Whether Codex runs with bypassed approvals and sandbox. Use `0`, `false`, `no`, or `off` to disable. |
 | `PATCHDOLL_CODEX_AUTH_ON_STARTUP` | `auto` | Codex startup auth mode. Use `0`, `false`, `no`, or `off` to skip startup auth. |
 | `PATCHDOLL_CODEX_PROFILE` | unset | Optional Codex profile passed to new Codex sessions. |
@@ -254,7 +275,8 @@ Container environment values:
 | `PATCHDOLL_SLACK_COMMAND` | `/patchdoll` | Slash command name the Slack bridge listens for. |
 | `PATCHDOLL_SLACK_THREAD_MAX_MESSAGES` | `100` | Maximum Slack thread messages fetched. Use `0` to disable thread fetching. |
 | `PATCHDOLL_SLACK_THREAD_MAX_MESSAGE_CHARS` | `4000` | Maximum characters kept per Slack thread message. |
-| `PATCHDOLL_ADMINS` | unset | Comma- or newline-separated Slack user IDs allowed to change settings. |
+| `PATCHDOLL_ADMINS` | unset | Comma- or newline-separated Slack user IDs allowed to change settings. Admins are implicitly trusted to invoke Patchdoll. |
+| `PATCHDOLL_TRUSTED_USERS` | unset | Comma- or newline-separated Slack user IDs allowed to invoke Patchdoll for normal work. **Fails closed, no escape hatch:** set at least one of `PATCHDOLL_TRUSTED_USERS` / `PATCHDOLL_ADMINS` or Patchdoll denies every request. Matched against the requesting actor's Slack user ID only. |
 | `PATCHDOLL_LOG_LEVEL` | `info` | Container console log level: `warn`, `info`, `debug`, or `trace`. |
 | `PATCHDOLL_GITHUB_NOTIFY_SLACK_CHANNEL` | unset | Slack channel ID that receives GitHub webhook notifications. |
 | `PATCHDOLL_GITHUB_WEBHOOK_TRACKED_REPOS` | unset | Comma- or newline-separated GitHub repositories tracked through webhooks. |
@@ -263,6 +285,10 @@ Container environment values:
 Internal runtime values such as `CODEX_HOME`, `HOME`, `PATCHDOLL_TASK`,
 `GH_TOKEN`, `GITHUB_TOKEN`, and `GH_PROMPT_DISABLED` are set by Patchdoll for the
 Codex process. Do not configure them yourself.
+
+When explicit git author overrides are unset and GitHub App auth is available,
+Patchdoll configures the agent git identity from the authenticated `gh` login,
+using GitHub noreply email addresses for commits.
 
 ### Experimental Claude provider scaffold
 
@@ -294,10 +320,12 @@ Useful DB-backed settings:
 patchdollctl settings set ai.provider claude
 patchdollctl settings set claude.model sonnet
 patchdollctl settings set claude.effort high
-patchdollctl settings set claude.permissionMode default
 patchdollctl settings set claude.maxTurns 0
 patchdollctl settings set ai.memoryEnabled false
 ```
+
+Claude permission mode is fixed to `bypassPermissions` for headless Patchdoll
+runs and is not configurable via `patchdollctl`.
 
 `ai.memoryEnabled` is a provider-neutral override for the AI agent's
 cross-thread memory. Flip it at runtime via `patchdollctl` or, for listed
@@ -318,15 +346,18 @@ how the agent behaves. Setting the value explicitly overrides both providers:
 ### Let Slack admins change Patchdoll settings
 
 Patchdoll is secure by default. Slack users cannot change Patchdoll settings
-unless you explicitly list their Slack user IDs in `PATCHDOLL_ADMINS`.
+unless you explicitly list their Slack user IDs in `PATCHDOLL_ADMINS`. Admins
+are implicitly trusted to invoke Patchdoll, so a deployment with
+`PATCHDOLL_ADMINS` set does not need to duplicate those users in
+`PATCHDOLL_TRUSTED_USERS`.
 
 ```sh
 -e PATCHDOLL_ADMINS=U12345678,W12345678
 ```
 
-Use Slack user IDs, not display names. See
-[Allow Slack Admin Settings Changes](docs/slack-how-to.md#optional-allow-slack-admin-settings-changes)
-for how to copy the right ID from Slack.
+Use Slack user IDs, not display names. See [Who can use
+Patchdoll](docs/slack-how-to.md#who-can-use-patchdoll-required) for how to copy
+the right ID from Slack and for the trusted-users list every deployment needs.
 
 After that, listed admins can ask Patchdoll to update non-secret runtime
 settings:

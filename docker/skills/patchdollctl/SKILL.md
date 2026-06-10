@@ -36,8 +36,9 @@ Claude (`claude.*`):
 
 - `claude.model`: non-empty string, e.g. `opus` or `sonnet`
 - `claude.effort`: one of `low`, `medium`, `high`, `xhigh`, `max`
-- `claude.permissionMode`: one of `default`, `acceptEdits`, `bypassPermissions`, `plan`
 - `claude.maxTurns`: non-negative integer
+
+Claude permission mode is pinned to `bypassPermissions` for headless runs and is not a supported setting.
 
 Settings only take effect for the provider selected by `ai.provider`. For the live value of any key, run `get`/`list` rather than assuming a default — values are DB-backed and changeable.
 
@@ -56,6 +57,6 @@ patchdollctl settings set codex.fastMode true
 - Only use this CLI for explicit user requests to inspect or change Patchdoll settings.
 - Do not use raw `sqlite3`, ad hoc Node scripts, or direct DB writes to bypass validation.
 - Do not move secrets into settings. Slack tokens, API keys, cookies, private keys, and credentials stay in secrets/env files.
-- Admin actors are configured only with `PATCHDOLL_ADMINS`; do not try to set admins with `patchdollctl`.
+- Slack access is configured only with `PATCHDOLL_TRUSTED_USERS` and `PATCHDOLL_ADMINS`; do not try to set trusted users or admins with `patchdollctl`.
 - If the Slack context says the actor is not an admin, explain that the settings change cannot be applied rather than attempting a write.
 - Some startup-loaded settings may require restarting Patchdoll before they affect already-running processes.
