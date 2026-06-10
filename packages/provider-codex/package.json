@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@patchdoll/core": "0.0.0",
-    "@openai/codex": "0.132.0"
+    "@openai/codex": "0.139.0"
   },
   "engines": {
     "node": ">=24"
