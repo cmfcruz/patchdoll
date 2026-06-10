@@ -57,7 +57,8 @@ export async function loadConfig(): Promise<PatchdollConfig> {
       )
     },
     capabilities: DEFAULT_CAPABILITIES,
-    admins: parseStringList(process.env.PATCHDOLL_ADMINS) ?? []
+    admins: parseStringList(process.env.PATCHDOLL_ADMINS) ?? [],
+    trustedUsers: parseStringList(process.env.PATCHDOLL_TRUSTED_USERS) ?? []
   };
 }
 

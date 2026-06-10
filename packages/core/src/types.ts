@@ -32,6 +32,8 @@ export interface PatchdollConfig {
   ai: AiConfig;
   capabilities: Capabilities;
   admins: string[];
+  /** Slack user IDs allowed to drive Patchdoll for normal work. */
+  trustedUsers: string[];
 }
 
 export interface NormalizedEvent {
