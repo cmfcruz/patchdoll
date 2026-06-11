@@ -224,6 +224,7 @@ RUN rm -f /tmp/patchdoll-validation-ok \
   /etc/s6-overlay/s6-rc.d/codex-worker/run.sh \
   /etc/s6-overlay/s6-rc.d/ngrok-tunnel/run \
   /etc/s6-overlay/s6-rc.d/ngrok-tunnel/run.sh \
+  /etc/s6-overlay/scripts/intake-review-runtime-check.sh \
   /etc/s6-overlay/s6-rc.d/patchdoll/run \
   /etc/s6-overlay/s6-rc.d/patchdoll/run.sh \
   /etc/s6-overlay/s6-rc.d/slack-bridge/run \
