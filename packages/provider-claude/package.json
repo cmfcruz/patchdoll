@@ -17,7 +17,7 @@
     "check": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@anthropic-ai/claude-code": "2.1.158",
+    "@anthropic-ai/claude-code": "2.1.170",
     "@patchdoll/core": "0.0.0"
   },
   "engines": {
