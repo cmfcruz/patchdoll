@@ -192,7 +192,7 @@ RUN rm -f /tmp/patchdoll-validation-ok \
     arm64) claude_arch="arm64" ;; \
     *) echo "Unsupported TARGETARCH for Claude Code: ${TARGETARCH:-unset}" >&2; exit 1 ;; \
   esac \
-  && claude_binary="/app/packages/provider-claude/node_modules/@anthropic-ai/claude-code-linux-${claude_arch}/claude" \
+  && claude_binary="/app/node_modules/@anthropic-ai/claude-code-linux-${claude_arch}/claude" \
   && test -x "${claude_binary}" \
   && ln -sf "${claude_binary}" /usr/local/bin/claude \
   && chmod 0444 /etc/agent/AGENTS.md /etc/agent/CLAUDE.md \
