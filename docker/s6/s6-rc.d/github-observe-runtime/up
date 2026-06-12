@@ -1,0 +1,2 @@
+with-contenv
+/bin/bash /etc/s6-overlay/scripts/github-observe-runtime-check.sh
