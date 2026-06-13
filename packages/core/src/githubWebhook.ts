@@ -3,6 +3,16 @@ import { chmodSync, mkdirSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import {
+  githubObserveConfigFromEnv,
+  githubObserveDecision,
+  isGithubObserveEvent,
+  logGithubObserveSkipped,
+  needsGithubObserveRuntimeStatus,
+  readGithubObserveRuntimeStatus,
+  scheduleGithubObserveDispatch,
+  type GithubObserveWebhookEvent
+} from "./githubObserve.js";
 import { readBody, sendJson } from "./http.js";
 import { stringifyLogJson } from "./log.js";
 import { patchdollSecret } from "./secrets.js";
@@ -11,7 +21,7 @@ import type { JsonValue, NormalizedEvent } from "./types.js";
 
 const DEFAULT_STATE_DB_PATH = "/patchdoll/state/patchdoll.sqlite";
 const DEFAULT_MAX_BODY_BYTES = 1024 * 1024;
-const ALLOWED_EVENTS = new Set([
+const SLACK_NOTIFICATION_EVENTS = new Set([
   "issues.opened",
   "pull_request.opened",
   "issue_comment.created",
@@ -168,6 +178,34 @@ export async function handleGithubWebhook(
     return;
   }
 
+  if (!isTrackedGithubRepo(config, normalized)) {
+    logGithubWebhookTrace("GitHub webhook ignored", {
+      ...githubNormalizedLogSummary(normalized),
+      reason: "disallowed_repository"
+    });
+    sendJson(response, 202, {
+      ok: true,
+      ignored: true,
+      reason: "disallowed_repository"
+    });
+    return;
+  }
+
+  const notifySlack = isSlackNotificationEvent(normalized);
+  const observeEvent = isGithubObserveEvent(normalized.eventKey);
+  if (!notifySlack && !observeEvent) {
+    logGithubWebhookTrace("GitHub webhook ignored", {
+      ...githubNormalizedLogSummary(normalized),
+      reason: "unsupported_event"
+    });
+    sendJson(response, 202, {
+      ok: true,
+      ignored: true,
+      reason: "unsupported_event"
+    });
+    return;
+  }
+
   if (isDuplicateDelivery(config.stateDbPath, headers, normalized)) {
     logGithubWebhookTrace("GitHub webhook ignored", {
       ...githubNormalizedLogSummary(normalized),
@@ -180,20 +218,65 @@ export async function handleGithubWebhook(
     return;
   }
 
-  if (!isAllowedGithubEvent(config, normalized)) {
+  const observeWebhookEvent = observeEvent ? githubObserveWebhookEvent(normalized) : undefined;
+  const observeConfig = observeWebhookEvent ? githubObserveConfigFromEnv() : undefined;
+  const observeDecision =
+    observeWebhookEvent && observeConfig
+      ? githubObserveDecision(
+          observeWebhookEvent,
+          observeConfig,
+          needsGithubObserveRuntimeStatus(observeWebhookEvent, observeConfig)
+            ? await readGithubObserveRuntimeStatus()
+            : { state: "disabled", reason: "feature_disabled" }
+        )
+      : undefined;
+
+  if (observeDecision?.dispatch) {
+    scheduleGithubObserveDispatch(observeDecision.target);
+  } else if (observeDecision && observeWebhookEvent) {
+    logGithubObserveSkipped(observeWebhookEvent, observeDecision);
+  }
+
+  if (!notifySlack) {
+    if (observeDecision?.dispatch) {
+      logGithubWebhookTrace("GitHub webhook accepted for observe dispatch", githubNormalizedLogSummary(normalized));
+      sendJson(response, 202, {
+        ok: true,
+        event: normalized.event.kind,
+        deliveryId: headers.deliveryId,
+        githubObserve: true
+      });
+      return;
+    }
+
     logGithubWebhookTrace("GitHub webhook ignored", {
       ...githubNormalizedLogSummary(normalized),
-      reason: "disallowed_event"
+      reason: observeDecision?.reason ?? "unsupported_event"
     });
     sendJson(response, 202, {
       ok: true,
       ignored: true,
-      reason: "disallowed_event"
+      reason: observeDecision?.reason ?? "unsupported_event"
     });
     return;
   }
 
   if (!config.notifySlackChannel) {
+    if (observeDecision?.dispatch) {
+      logGithubWebhookTrace("GitHub webhook accepted for observe dispatch", {
+        ...githubNormalizedLogSummary(normalized),
+        slackNotification: "skipped_channel_not_configured"
+      });
+      sendJson(response, 202, {
+        ok: true,
+        event: normalized.event.kind,
+        deliveryId: headers.deliveryId,
+        githubObserve: true,
+        slackNotification: "skipped_channel_not_configured"
+      });
+      return;
+    }
+
     logGithubWebhookWarning("GitHub webhook Slack notification channel is not configured", normalized);
     logGithubWebhookTrace("GitHub webhook ignored", {
       ...githubNormalizedLogSummary(normalized),
@@ -509,12 +592,15 @@ function openGithubWebhookDb(path: string): DatabaseSync {
   return db;
 }
 
-function isAllowedGithubEvent(
+function isTrackedGithubRepo(
   config: GithubWebhookConfig,
   normalized: NormalizedGithubWebhook
 ): boolean {
-  const repoAllowed = !config.allowedRepos || config.allowedRepos.has(normalized.repo);
-  return repoAllowed && ALLOWED_EVENTS.has(normalized.eventKey);
+  return !config.allowedRepos || config.allowedRepos.has(normalized.repo);
+}
+
+function isSlackNotificationEvent(normalized: NormalizedGithubWebhook): boolean {
+  return SLACK_NOTIFICATION_EVENTS.has(normalized.eventKey);
 }
 
 function logGithubWebhookWarning(
@@ -563,6 +649,20 @@ function githubNormalizedLogSummary(
     number: normalized.number ?? null,
     htmlUrl: normalized.htmlUrl ?? null,
     commentHtmlUrl: normalized.comment?.htmlUrl ?? null
+  };
+}
+
+function githubObserveWebhookEvent(
+  normalized: NormalizedGithubWebhook
+): GithubObserveWebhookEvent {
+  return {
+    deliveryId: normalized.event.id,
+    repository: normalized.repo,
+    eventName: normalized.eventName,
+    action: normalized.action,
+    eventKey: normalized.eventKey,
+    number: normalized.number,
+    htmlUrl: normalized.htmlUrl
   };
 }
 

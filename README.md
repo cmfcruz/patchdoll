@@ -280,6 +280,10 @@ Container environment values:
 | `PATCHDOLL_LOG_LEVEL` | `info` | Container console log level: `warn`, `info`, `debug`, or `trace`. |
 | `PATCHDOLL_GITHUB_NOTIFY_SLACK_CHANNEL` | unset | Slack channel ID that receives GitHub webhook notifications. |
 | `PATCHDOLL_GITHUB_WEBHOOK_TRACKED_REPOS` | unset | Comma- or newline-separated GitHub repositories tracked through webhooks. |
+| `PATCHDOLL_GITHUB_OBSERVE_ISSUES_ENABLED` | `false` | Enables the isolated intake-review dispatch seam for issue opened/edited webhooks when the observe runtime is available. |
+| `PATCHDOLL_GITHUB_OBSERVE_PRS_ENABLED` | `false` | Enables the isolated intake-review dispatch seam for pull request opened/synchronize webhooks when the observe runtime is available. |
+| `PATCHDOLL_GITHUB_OBSERVE_WORKER_IMAGE` | unset | Local worker image name required by the observe runtime readiness check. |
+| `PATCHDOLL_GITHUB_OBSERVE_RUNTIME_CHECK_TIMEOUT_SECONDS` | `10` | Timeout for each pre-start observe runtime readiness probe. |
 | `PATCHDOLL_NGROK_DOMAIN` | unset | Stable ngrok domain to use for the public webhook URL. |
 
 Internal runtime values such as `CODEX_HOME`, `HOME`, `PATCHDOLL_TASK`,

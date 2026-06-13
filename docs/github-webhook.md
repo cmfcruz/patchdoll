@@ -39,7 +39,7 @@ container environment values:
 Use full `owner/repo` names. Separate multiple repositories with commas, spaces,
 or newlines.
 
-Supported events are fixed to a conservative default:
+Slack notification events are fixed to a conservative default:
 
 - `issues.opened`
 - `pull_request.opened`
@@ -51,6 +51,27 @@ Supported events are fixed to a conservative default:
 If `PATCHDOLL_GITHUB_WEBHOOK_TRACKED_REPOS` is unset, any repository using the
 configured webhook secret is tracked. Patchdoll does not expose an event allowlist setting;
 otherwise one typo becomes a surprisingly effective notification black hole.
+
+## Optional intake-review dispatch
+
+Patchdoll also has a gated dispatch seam for the future isolated intake-review
+worker. This path is separate from the normal Patchdoll AI orchestrator and only
+schedules work when the pre-start observe runtime check reports `available`.
+Until the worker lands, the default dispatcher is log-only; this is the narrow
+handoff point the worker will plug into.
+
+Enable modes independently:
+
+```sh
+-e PATCHDOLL_GITHUB_OBSERVE_ISSUES_ENABLED=true
+-e PATCHDOLL_GITHUB_OBSERVE_PRS_ENABLED=true
+-e PATCHDOLL_GITHUB_OBSERVE_WORKER_IMAGE=patchdoll-github-observe:latest
+```
+
+Issue intake dispatch handles `issues.opened` and `issues.edited`. PR intake
+dispatch handles `pull_request.opened` and `pull_request.synchronize`. Comment
+events are intentionally not intake-review triggers; they remain Slack
+notifications only.
 
 ## GitHub webhook settings
 
