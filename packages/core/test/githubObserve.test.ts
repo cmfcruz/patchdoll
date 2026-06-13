@@ -6,6 +6,7 @@ import {
   githubObserveConfigFromEnv,
   githubObserveDecision,
   isGithubObserveEvent,
+  needsGithubObserveRuntimeStatus,
   readGithubObserveRuntimeStatus
 } from "../dist/githubObserve.js";
 
@@ -90,6 +91,44 @@ test("requires the matching feature gate", () => {
       reason: "feature_disabled",
       mode: "pr-code-intake"
     }
+  );
+});
+
+test("does not need runtime status until a matching feature gate can dispatch", () => {
+  assert.equal(
+    needsGithubObserveRuntimeStatus(
+      observeEvent("issues.opened"),
+      { issuesEnabled: false, prsEnabled: true }
+    ),
+    false
+  );
+  assert.equal(
+    needsGithubObserveRuntimeStatus(
+      observeEvent("issues.opened"),
+      { issuesEnabled: true, prsEnabled: false }
+    ),
+    true
+  );
+  assert.equal(
+    needsGithubObserveRuntimeStatus(
+      observeEvent("pull_request.opened"),
+      { issuesEnabled: true, prsEnabled: false }
+    ),
+    false
+  );
+  assert.equal(
+    needsGithubObserveRuntimeStatus(
+      { ...observeEvent("pull_request.opened"), number: undefined },
+      { issuesEnabled: true, prsEnabled: true }
+    ),
+    false
+  );
+  assert.equal(
+    needsGithubObserveRuntimeStatus(
+      observeEvent("issue_comment.created"),
+      { issuesEnabled: true, prsEnabled: true }
+    ),
+    false
   );
 });
 

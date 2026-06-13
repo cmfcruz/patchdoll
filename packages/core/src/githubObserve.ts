@@ -96,6 +96,18 @@ export function isGithubObserveEvent(eventKey: string): boolean {
   return OBSERVE_EVENT_MODES.has(eventKey);
 }
 
+export function needsGithubObserveRuntimeStatus(
+  event: GithubObserveWebhookEvent,
+  config: GithubObserveConfig
+): boolean {
+  const mode = OBSERVE_EVENT_MODES.get(event.eventKey);
+  if (!mode || event.number === undefined) {
+    return false;
+  }
+
+  return isGithubObserveModeEnabled(mode, config);
+}
+
 export async function readGithubObserveRuntimeStatus(
   path = GITHUB_OBSERVE_RUNTIME_STATUS_PATH
 ): Promise<GithubObserveRuntimeStatus> {
@@ -134,10 +146,7 @@ export function githubObserveDecision(
     return { dispatch: false, reason: "missing_target", mode };
   }
 
-  if (
-    (mode === "issue-content-intake" && !config.issuesEnabled) ||
-    (mode === "pr-code-intake" && !config.prsEnabled)
-  ) {
+  if (!isGithubObserveModeEnabled(mode, config)) {
     return { dispatch: false, reason: "feature_disabled", mode };
   }
 
@@ -236,6 +245,16 @@ function parseRuntimeStatusFile(raw: string): Record<string, string> {
     values[trimmed.slice(0, separator)] = trimmed.slice(separator + 1).trim();
   }
   return values;
+}
+
+function isGithubObserveModeEnabled(
+  mode: GithubObserveMode,
+  config: GithubObserveConfig
+): boolean {
+  return (
+    (mode === "issue-content-intake" && config.issuesEnabled) ||
+    (mode === "pr-code-intake" && config.prsEnabled)
+  );
 }
 
 function logGithubObserveTrace(

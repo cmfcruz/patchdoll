@@ -8,6 +8,7 @@ import {
   githubObserveDecision,
   isGithubObserveEvent,
   logGithubObserveSkipped,
+  needsGithubObserveRuntimeStatus,
   readGithubObserveRuntimeStatus,
   scheduleGithubObserveDispatch,
   type GithubObserveWebhookEvent
@@ -180,12 +181,12 @@ export async function handleGithubWebhook(
   if (!isTrackedGithubRepo(config, normalized)) {
     logGithubWebhookTrace("GitHub webhook ignored", {
       ...githubNormalizedLogSummary(normalized),
-      reason: "disallowed_event"
+      reason: "disallowed_repository"
     });
     sendJson(response, 202, {
       ok: true,
       ignored: true,
-      reason: "disallowed_event"
+      reason: "disallowed_repository"
     });
     return;
   }
@@ -218,13 +219,17 @@ export async function handleGithubWebhook(
   }
 
   const observeWebhookEvent = observeEvent ? githubObserveWebhookEvent(normalized) : undefined;
-  const observeDecision = observeWebhookEvent
-    ? githubObserveDecision(
-        observeWebhookEvent,
-        githubObserveConfigFromEnv(),
-        await readGithubObserveRuntimeStatus()
-      )
-    : undefined;
+  const observeConfig = observeWebhookEvent ? githubObserveConfigFromEnv() : undefined;
+  const observeDecision =
+    observeWebhookEvent && observeConfig
+      ? githubObserveDecision(
+          observeWebhookEvent,
+          observeConfig,
+          needsGithubObserveRuntimeStatus(observeWebhookEvent, observeConfig)
+            ? await readGithubObserveRuntimeStatus()
+            : { state: "disabled", reason: "feature_disabled" }
+        )
+      : undefined;
 
   if (observeDecision?.dispatch) {
     scheduleGithubObserveDispatch(observeDecision.target);
